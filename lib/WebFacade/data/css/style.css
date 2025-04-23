@@ -1,0 +1,88 @@
+/* style.css - Basic styling for the control interface */
+
+body {
+    font-family: sans-serif;
+    margin: 20px;
+    background-color: #f4f4f4;
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+}
+
+.status-box, .control-box, .log-box {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+h2 {
+    margin-top: 0;
+    color: #555;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+label {
+    display: inline-block;
+    margin-bottom: 5px;
+    min-width: 150px; /* Align inputs */
+}
+
+input[type="number"], input[type="range"] {
+    margin-bottom: 10px;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+input[type="range"] {
+    vertical-align: middle;
+}
+
+button {
+    padding: 8px 15px;
+    margin-right: 10px;
+    background-color: #5cb85c;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #4cae4c;
+}
+
+#stop-button {
+    background-color: #d9534f;
+}
+
+#stop-button:hover {
+     background-color: #c9302c;
+}
+
+#update-button {
+    background-color: #f0ad4e;
+}
+
+#update-button:hover {
+    background-color: #ec971f;
+}
+
+#ws-status {
+    font-weight: bold;
+}
+
+#log-output {
+    background-color: #e9e9e9;
+    border: 1px solid #ccc;
+    height: 150px;
+    overflow-y: scroll;
+    padding: 5px;
+    font-family: monospace;
+    white-space: pre-wrap; /* Wrap long lines */
+} 

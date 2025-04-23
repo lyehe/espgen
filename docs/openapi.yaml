@@ -1,0 +1,122 @@
+openapi: 3.0.0
+info:
+  title: ESP32 Trigger API
+  description: REST API for controlling the ESP32 signal generator.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: API base path
+
+paths:
+  /trigger/start:
+    post:
+      summary: Start signal generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel: 
+                  type: integer
+                  description: Target channel (usually 0)
+                  example: 0
+                frequency:
+                  type: number
+                  format: float
+                  description: Frequency in Hz
+                  example: 1000.0
+                duty_cycle:
+                  type: number
+                  format: float
+                  description: Duty cycle (0.0 to 1.0)
+                  example: 0.5
+      responses:
+        '200':
+          description: Command accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: queued
+        '400':
+          description: Invalid request parameters
+
+  /trigger/stop:
+    post:
+      summary: Stop signal generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel:
+                  type: integer
+                  description: Target channel (usually 0)
+                  example: 0
+      responses:
+        '200':
+          description: Command accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: queued
+        '400':
+          description: Invalid request parameters
+
+  /trigger/update:
+    post:
+      summary: Update signal parameters (e.g., duty cycle)
+      # Define request body and responses similar to start/stop
+      responses:
+        '200':
+          description: Command accepted
+        '400':
+          description: Invalid request parameters
+
+  /status:
+    get:
+      summary: Get current device status and signal parameters
+      responses:
+        '200':
+          description: Current status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channel: 
+                    type: integer
+                    example: 0
+                  is_running:
+                    type: boolean
+                    example: true
+                  frequency:
+                    type: number
+                    format: float
+                    example: 1000.0
+                  duty_cycle:
+                    type: number
+                    format: float
+                    example: 0.5
+                  wifi_mode:
+                    type: string
+                    enum: [STA, AP, NO_NET]
+                    example: STA
+                  ip_address:
+                    type: string
+                    example: 192.168.1.100
+
+components:
+  schemas:
+    # Define reusable schemas if needed 

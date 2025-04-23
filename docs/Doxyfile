@@ -1,0 +1,10 @@
+# Doxyfile placeholder
+# Configuration for Doxygen documentation generation
+
+PROJECT_NAME = "ESP32 Trigger"
+OUTPUT_DIRECTORY = docs/html
+INPUT = ./lib ./common ./apps
+RECURSIVE = YES
+EXTRACT_ALL = YES
+EXTRACT_PRIVATE = NO
+EXTRACT_STATIC = YES 

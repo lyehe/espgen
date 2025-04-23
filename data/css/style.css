@@ -1,0 +1,65 @@
+/* Basic styles - Add more later */
+body {
+    font-family: sans-serif;
+    padding: 20px;
+}
+
+h1 {
+    color: #333;
+}
+
+fieldset {
+    margin-top: 20px;
+    padding: 15px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    max-width: 400px; /* Limit width for better layout */
+}
+
+legend {
+    font-weight: bold;
+    padding: 0 5px;
+}
+
+fieldset div {
+    margin-bottom: 10px;
+    display: flex; /* Use flexbox for label/input alignment */
+    align-items: center; /* Vertically center items */
+}
+
+fieldset label {
+    min-width: 150px; /* Give labels consistent width */
+    display: inline-block; /* Needed for min-width */
+    margin-right: 10px;
+}
+
+fieldset input[type="number"] {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    flex-grow: 1; /* Allow input to take remaining space */
+}
+
+button {
+    padding: 8px 15px;
+    margin-right: 10px;
+    margin-top: 10px; /* Space above buttons */
+    border: none;
+    border-radius: 4px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+/* Specific button styling if needed */
+#stop-button {
+    background-color: #dc3545; /* Red */
+}
+
+#stop-button:hover {
+    background-color: #c82333;
+} 
