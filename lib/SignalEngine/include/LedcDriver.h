@@ -1,25 +1,40 @@
 #ifndef LEDC_DRIVER_H
 #define LEDC_DRIVER_H
 
-#include <Arduino.h>
-#include <driver/ledc.h>
-#include <stdint.h> // Include for uint8_t if not implicitly included
+#include <stdint.h> // Include for uint8_t etc.
 
+// LEDC Driver class definition
 class LedcDriver {
 public:
-    LedcDriver(int pin, int channel = 0, double freq = 1000.0, uint8_t resolution = 8);
+    // Constructor
+    LedcDriver(int pin, int channel, double freq, uint8_t resolution);
+
+    // Initialize LEDC
     void begin();
-    void setDuty(double dutyCycle); // Duty cycle 0.0 to 1.0
+
+    // Set duty cycle (0.0 to 1.0)
+    void setDuty(double dutyCycle);
+
+    // Set frequency (Hz)
     void setFrequency(double freq);
+
+    // Stop output (set duty to 0)
     void stop();
-    int getChannel() const { return _channel; } // Getter for channel number
+
+    // Detach old pin and attach new pin
+    void reAttachPin(int newPin);
+
+    // Getters (optional)
+    int getChannel() const { return _channel; }
+    uint8_t getResolution() const { return _resolution; }
+    // Add other getters if needed
 
 private:
     int _pin;
     int _channel;
     double _frequency;
     uint8_t _resolution;
-    uint32_t _maxDutyValue;
+    // uint32_t _maxDutyValue; // Removed - Calculate in setDuty based on _resolution
 };
 
 #endif // LEDC_DRIVER_H 

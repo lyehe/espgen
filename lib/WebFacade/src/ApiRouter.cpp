@@ -82,22 +82,94 @@ void ApiRouter::registerRoutes() {
     });
 
      _server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
-         // Get actual status from SignalEngine
-         bool running = _engine.isRunning();
-         double freq = _engine.getCurrentFrequencyHz();
-         float duty = _engine.getCurrentDutyCycle();
-
-         // Build JSON response
-         JsonDocument doc; // Using modern JsonDocument
-         doc["status"] = running ? "running" : "stopped";
-         doc["frequency"] = freq;
-         doc["duty_cycle"] = duty;
-
-         String output;
-         serializeJson(doc, output);
-         request->send(200, "application/json", output);
-         Serial.println("Sent GET /api/status response (actual data)");
+         // Call the dedicated handler method
+         this->handleStatusGet(request);
      });
+
+    // Register GET handler for /api/discovery
+    _server.on("/api/discovery", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handleDiscoveryGet(request);
+    });
+
+    // Register POST handler for /api/v1/config/output_pin
+    // Using v1 namespace for config endpoint
+    _server.on("/api/v1/config/output_pin", HTTP_POST, 
+        [](AsyncWebServerRequest *request){ /* No file upload */ }, 
+        NULL, 
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            // Re-use or adapt the RequestBodyState logic if needed for larger bodies,
+            // but for a simple {"pin": 18}, direct handling might be okay if limits are enforced.
+            
+            // Basic implementation assuming single chunk or small body
+            if (index == 0) { // First chunk (or only chunk)
+                if (total > 64) { // Check for excessively large body
+                    Serial.println("ERROR: /api/v1/config/output_pin body too large");
+                    request->send(413, "text/plain", "Payload Too Large");
+                    return;
+                }
+                
+                // Process the data directly
+                JsonDocument jsonDoc;
+                DeserializationError error = deserializeJson(jsonDoc, data, len);
+
+                if (error) {
+                    Serial.print("deserializeJson() failed for setpin: ");
+                    Serial.println(error.c_str());
+                    request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                } else {
+                    JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                    this->handleSetOutputPinPost(request, jsonVariant); // Call specific handler
+                }
+            } else {
+                // Handle potential multi-chunk bodies if necessary (complex)
+                Serial.println("Warning: Multi-chunk body not fully supported for setpin yet.");
+                // Ideally, accumulate using RequestBodyState like /api/trigger
+            }
+    });
+}
+
+// Handler implementation for GET /api/discovery
+void ApiRouter::handleDiscoveryGet(AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["status"] = "ok";
+    doc["device_type"] = "ESP32_Signal_Generator"; // Identify the device type
+    doc["hostname"] = "trigger"; // Reflecting the mDNS name
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Sent GET /api/discovery response");
+}
+
+// Handler implementation for GET /api/status
+void ApiRouter::handleStatusGet(AsyncWebServerRequest *request) {
+    SignalStatus_t currentStatus;
+    SignalError err = _engine.getCurrentStatus(currentStatus);
+
+    if (err != SIG_OK) {
+        // Handle potential errors from getCurrentStatus if any are added later
+        Serial.printf("Error getting signal status: %d\n", err);
+        request->send(500, "application/json", "{\"error\":\"Failed to get engine status\"}");
+        return;
+    }
+
+    // Get the current output pin
+    int outputPin = _engine.getOutputPin();
+
+    // Build JSON response using the status struct
+    JsonDocument doc; // Using modern JsonDocument
+    doc["channel"] = currentStatus.channel; 
+    doc["frequency"] = currentStatus.frequency;
+    doc["duty_cycle"] = currentStatus.dutyCycle;
+    doc["is_running"] = currentStatus.isRunning; // Use a different key to avoid confusion with generic "status"
+    doc["duration_sec"] = currentStatus.lastAppliedDurationSec; // Add the duration
+    doc["output_pin"] = outputPin; // Add the current output pin
+    doc["status_text"] = currentStatus.isRunning ? "running" : "stopped"; // Optional descriptive text
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Sent GET /api/status response (using status struct)");
 }
 
 // Handler implementation for POST /api/trigger
@@ -113,26 +185,27 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
     // uint8_t channel = obj["channel"] | 0; // Channel currently not in SignalCmd
     uint32_t freq = obj["frequency"] | 1000;
     float duty = obj["duty_cycle"] | 0.5f;
+    float duration = obj["duration_sec"] | 0.0f; // Parse duration_sec, default 0
 
     SignalCmd cmd;
     bool commandValid = true;
+    cmd.durationSec = 0; // Ensure duration is 0 for non-start commands by default
 
     // Use correct enum type and values
     if (strcmp(commandStr, "start") == 0) {
         cmd.type = SIG_CMD_START;
-        // Set params for start if needed, based on how SignalEngine interprets START
-        // Assuming START uses the last known/default params, or we might need separate update
-        cmd.frequencyHz = freq; // Let's assume START can set initial params
+        cmd.frequencyHz = freq;
         cmd.dutyCycle = duty;
-        Serial.printf("API: Parsed START (Freq: %lu, Duty: %.2f)\n", freq, duty);
+        cmd.durationSec = duration; // Set duration for start command
+        Serial.printf("API: Parsed START (Freq: %lu, Duty: %.2f, Duration: %.2f s)\n", freq, duty, duration);
     } else if (strcmp(commandStr, "stop") == 0) {
         cmd.type = SIG_CMD_STOP;
          Serial.printf("API: Parsed STOP\n");
     } else if (strcmp(commandStr, "update") == 0) {
         // Assuming "update" corresponds to UPDATE_ALL
         cmd.type = SIG_CMD_UPDATE_ALL;
-        cmd.frequencyHz = freq; // Access members directly
-        cmd.dutyCycle = duty;   // Access members directly
+        cmd.frequencyHz = freq;
+        cmd.dutyCycle = duty;
          Serial.printf("API: Parsed UPDATE (Freq: %lu, Duty: %.2f)\n", freq, duty);
     } else {
         commandValid = false;
@@ -149,5 +222,36 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
             request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
             Serial.println("API: Command queue full.");
         }
+    }
+}
+
+// Handler implementation for POST /api/v1/config/output_pin
+void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["pin"].is<int>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'pin' field (must be integer)\"}");
+        return;
+    }
+
+    int pin = obj["pin"];
+    Serial.printf("API: Received request to set output pin to %d\n", pin);
+
+    // Validate the pin number
+    if (pin >= 12 && pin <= 19) {
+        SignalCmd cmd;
+        cmd.type = SIG_CMD_SET_PIN;
+        cmd.pin = (uint8_t)pin;
+
+        if (_engine.sendCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"output pin update queued\"}");
+            Serial.println("API: Set Output Pin command sent successfully.");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+            Serial.println("API: Command queue full for Set Output Pin.");
+        }
+    } else {
+        Serial.printf("API: Invalid pin %d requested. Must be 12-19.\n", pin);
+        request->send(400, "application/json", "{\"error\":\"Invalid pin number (must be 12-19)\"}");
     }
 } 

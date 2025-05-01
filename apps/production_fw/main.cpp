@@ -5,6 +5,8 @@
 #include "build_opts.h"
 
 #include "SignalEngine.h"
+#include "signal_iface.h" // Needed for SignalCmd struct
+#include <Button2.h>        // Include Button2 library
 
 #if BUILD_SERIAL_CLI
 #include "SerialCLI.h"
@@ -14,8 +16,15 @@
 #include "WebFacade.h"
 #endif
 
+// Button Configuration
+#define BUTTON_PIN 23
+
 // Instantiate components
 SignalEngine signalEngine;
+Button2 button; 
+
+// Pointer to signal engine for use in button handler
+SignalEngine* signalEnginePtr = nullptr;
 
 #if BUILD_SERIAL_CLI
 SerialCLI serialCLI(signalEngine);
@@ -24,6 +33,30 @@ SerialCLI serialCLI(signalEngine);
 #if BUILD_WEB
 WebFacade webFacade(signalEngine);
 #endif
+
+// Button Tap Handler Function
+void handleButtonTap(Button2& btn) {
+    if (signalEnginePtr == nullptr) {
+        Serial.println("Button Error: SignalEngine pointer not set!");
+        return;
+    }
+
+    if (signalEnginePtr->isRunning()) {
+        // If running, send STOP command
+        Serial.println("Button: Sending STOP command.");
+        SignalCmd stopCmd = { .type = SIG_CMD_STOP };
+        signalEnginePtr->sendCommand(stopCmd);
+    } else {
+        // If stopped, send START command with last applied parameters
+        Serial.println("Button: Sending START command with last params.");
+        SignalCmd startCmd;
+        startCmd.type = SIG_CMD_START;
+        startCmd.frequencyHz = signalEnginePtr->getLastAppliedFrequencyHz();
+        startCmd.dutyCycle = signalEnginePtr->getLastAppliedDutyCycle();
+        startCmd.durationSec = signalEnginePtr->getLastAppliedDurationSec();
+        signalEnginePtr->sendCommand(startCmd);
+    }
+}
 
 void setup() {
     Serial.begin(115200);
@@ -34,6 +67,12 @@ void setup() {
 
     // Initialize core engine first
     signalEngine.begin();
+    signalEnginePtr = &signalEngine; // Assign address to pointer
+
+    // Initialize Button
+    button.begin(BUTTON_PIN, INPUT_PULLUP); // Assuming internal pull-up
+    button.setTapHandler(handleButtonTap); // Set the tap handler function
+    Serial.printf("Button initialized on GPIO %d.\n", BUTTON_PIN);
 
     // Initialize optional components based on build flags
 #if BUILD_SERIAL_CLI
@@ -55,6 +94,7 @@ void setup() {
 void loop() {
     // Run loop functions for components
     signalEngine.loop();
+    button.loop(); // IMPORTANT: Call button loop handler
 
 #if BUILD_SERIAL_CLI
     // serialCLI.loop(); // SerialCLI handles input via task/event

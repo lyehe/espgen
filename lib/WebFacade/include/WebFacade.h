@@ -13,7 +13,7 @@ class WebFacade {
 public:
     // Constructor now requires a SignalEngine reference
     WebFacade(SignalEngine& engine);
-    void begin();
+    void begin(); 
 
 private:
     SignalEngine& _engine;      // Reference to the signal engine instance

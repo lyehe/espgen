@@ -21,6 +21,15 @@ private:
     // --- Request Handlers ---
     // Handler for POST requests to /api/trigger
     void handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &json);
+    
+    // Handler for GET requests to /api/status
+    void handleStatusGet(AsyncWebServerRequest *request);
+
+    // Handler for GET requests to /api/discovery
+    void handleDiscoveryGet(AsyncWebServerRequest *request);
+
+    // Handler for POST requests to /api/v1/config/output_pin
+    void handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVariant &json);
 
     // Static handler wrapper needed for AsyncWebServer library with JSON body
     static void handleTriggerPostWrapper(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);

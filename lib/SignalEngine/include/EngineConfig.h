@@ -14,4 +14,8 @@
 #define LEDC_CHANNEL_0     LEDC_CHANNEL_0
 #define LEDC_RESOLUTION    LEDC_TIMER_10_BIT // Example resolution
 
+// Default GPIO pin for output (if not set in NVS)
+// Ensure this pin is valid for LEDC/RMT on your ESP32 variant
+#define DEFAULT_OUTPUT_PIN 18
+
 #endif // ENGINE_CONFIG_H 

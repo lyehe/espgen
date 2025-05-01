@@ -7,31 +7,59 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <h1>ESP32 Trigger</h1>
+    <div class="container">
+        <h1>ESP32 Trigger</h1>
 
-    <div>WS Status: <span id="ws-status" style="font-weight: bold;">Initializing...</span></div>
-    <hr>
-    <div>Signal Status: <span id="status" style="font-weight: bold;">Unknown</span></div>
-    <div>Frequency (Hz): <span id="freq-display">---</span></div>
-    <div>Duty Cycle: <span id="duty-display">---</span></div>
-    <div>Ticks Since Start: <span id="tick-display">---</span></div>
-    <hr>
-
-    <fieldset>
-        <legend>Controls</legend>
-        <div>
-            <label for="freq-input">Frequency (Hz):</label>
-            <input type="number" id="freq-input" name="frequency" min="1" max="100000" step="10" value="1000">
+        <div class="websocket-status-section">
+            <strong>WS Status:</strong> <span id="ws-status">Initializing...</span>
         </div>
-        <div>
-            <label for="duty-input">Duty Cycle (0.0-1.0):</label>
-            <input type="number" id="duty-input" name="duty_cycle" min="0" max="1" step="0.01" value="0.5">
+        <div class="status-section">
+             <strong>Signal Status:</strong> <span id="status">Unknown</span>
         </div>
-        <button id="update-button">Update Settings</button>
-        <button id="start-button">Start Signal</button>
-        <button id="stop-button">Stop Signal</button>
-    </fieldset>
 
+        <div class="info-section">
+            <div><label>Frequency (Hz):</label> <span id="freq-display">---</span></div>
+            <div><label>Duty Cycle (%):</label> <span id="duty-display">---</span></div>
+            <div><label>Duration (s):</label> <span id="duration-display">---</span></div>
+            <div><label>Ticks Since Start:</label> <span id="tick-display">---</span></div>
+            <div><label>Running Time (s):</label> <span id="time-display">---</span></div>
+        </div>
+
+        <fieldset>
+            <legend>Controls</legend>
+            <div>
+                <label for="freq-input">Frequency (Hz):</label>
+                <input type="number" id="freq-input" name="frequency" min="1" max="100000" step="10" value="30">
+            </div>
+            <div>
+                <label for="duty-input">Duty Cycle (%):</label>
+                <input type="number" id="duty-input" name="duty_cycle" min="0" max="100" step="1" value="50">
+            </div>
+            <div>
+                <label for="delay-input">Start Delay (s):</label>
+                <input type="number" id="delay-input" name="delay" min="0" step="0.1" value="0">
+            </div>
+            <div>
+                <label for="duration-input">Duration (s):</label>
+                <input type="number" id="duration-input" name="duration" min="0" step="0.1" value="0">
+            </div>
+            <div class="button-group">
+                <button id="start-button">Start Signal</button>
+                <button id="stop-button">Stop Signal</button>
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Configuration</legend>
+            <div>
+                <label for="pin-input">Output Pin (12-19):</label>
+                <input type="number" id="pin-input" name="output_pin" min="12" max="19" step="1" value="18">
+                <button id="set-pin-button">Set Pin</button>
+            </div>
+            <!-- Add other configuration options here later -->
+        </fieldset>
+
+    </div> <!-- Closing container -->
 
     <script src="js/api.js"></script>
     <script src="js/ws.js"></script>

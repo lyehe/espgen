@@ -72,11 +72,13 @@ void SerialCLI::parseAndExecute() {
     // Simple parsing logic (replace with more robust parser later)
     if (_inputBuffer == "help") {
         Serial.println("Available Commands:");
-        Serial.println("  start              - Start signal generation");
+        Serial.println("  start              - Start signal generation (uses last/default params)");
         Serial.println("  stop               - Stop signal generation");
         Serial.println("  update freq duty   - Set frequency (Hz) and duty cycle (0.0-1.0)");
         Serial.println("  freq <hz>          - Set frequency only");
         Serial.println("  duty <0.0-1.0>     - Set duty cycle only");
+        Serial.println("  setpin <gpio>      - Set output pin (12-19)");
+        Serial.println("  status             - Show current status (Not Implemented)");
         // Add more help text
 
     } else if (_inputBuffer == "start") {
@@ -121,6 +123,22 @@ void SerialCLI::parseAndExecute() {
             commandSent = _engine.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: duty <0.0-1.0>");
+        }
+    } else if (_inputBuffer.startsWith("setpin ")) {
+        // Example: setpin 18
+        int pin = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "setpin %d", &pin);
+        if (argsParsed == 1) {
+            if (pin >= 12 && pin <= 19) {
+                cmd.type = SIG_CMD_SET_PIN;
+                cmd.pin = (uint8_t)pin;
+                commandSent = _engine.sendCommand(cmd);
+            } else {
+                 Serial.println("Error: Invalid pin. Must be between 12 and 19.");
+                 commandSent = false; // Explicitly mark as not sent
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: setpin <gpio_12_to_19>");
         }
     } else {
         Serial.printf("Error: Unknown command '%s'\n", _inputBuffer.c_str());

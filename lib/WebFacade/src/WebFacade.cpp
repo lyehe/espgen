@@ -51,7 +51,7 @@ void WebFacade::handleNotFound(AsyncWebServerRequest *request)
 {
     Serial.printf("NOT FOUND: http://%s%s\n", request->host().c_str(), request->url().c_str());
     request->send(404, "text/plain", "Not found");
-}
+    }
 
 // Begin WebFacade operation - updated
 void WebFacade::begin()
@@ -99,6 +99,21 @@ void WebFacade::begin()
             Serial.printf("Not Found (non-API), serving index.html: %s\n", request->url().c_str());
             request->send(LittleFS, "/index.html", "text/html");
         }
+    });
+
+    // Add CORS headers globally
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+
+    // Handle OPTIONS requests for CORS preflight explicitly for API routes
+    _server.on("^\\/api\\/.*$", HTTP_OPTIONS, [](AsyncWebServerRequest *request){
+        // Send necessary CORS headers for preflight
+        AsyncWebServerResponse *response = request->beginResponse(204); // No Content
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        response->addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+        request->send(response);
     });
 
     // Start the server

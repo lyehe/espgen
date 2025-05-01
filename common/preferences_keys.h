@@ -10,7 +10,8 @@
 #define WIFI_PASS_KEY "password"
 
 // Add other NVS keys here as needed, e.g., for device configuration
-// #define DEVICE_CFG_NAMESPACE "dev_config"
+#define DEVICE_CFG_NAMESPACE "dev_config"
+#define OUTPUT_PIN_KEY "output_pin"
 // #define HOSTNAME_KEY "hostname"
 // #define STATIC_IP_KEY "static_ip"
 

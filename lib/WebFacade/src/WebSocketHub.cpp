@@ -103,7 +103,10 @@ void WebSocketHub::broadcastStatus(int32_t event_id, const SignalEvtData& eventD
     doc["type"] = msgType;
     doc["frequency"] = eventData.current_freq;
     doc["duty_cycle"] = eventData.current_duty;
-    doc["ticks"] = eventData.current_ticks;
+    doc["duration_sec"] = eventData.duration_sec;
+    char ticksStr[21]; // Max length for uint64_t string + null terminator
+    snprintf(ticksStr, sizeof(ticksStr), "%llu", eventData.current_ticks);
+    doc["ticks"] = ticksStr;
 
     String output;
     serializeJson(doc, output);
