@@ -20,8 +20,8 @@ paths:
               properties:
                 channel: 
                   type: integer
-                  description: Target channel (usually 0)
-                  example: 0
+                  description: Target channel (usually 12)
+                  example: 12
                 frequency:
                   type: number
                   format: float
