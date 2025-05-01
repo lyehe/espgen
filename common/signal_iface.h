@@ -45,6 +45,7 @@ typedef struct {
     float current_duty;
     float duration_sec; // Last applied/active duration (0 if infinite)
     uint64_t current_ticks; // Number of ticks/updates since started
+    uint8_t output_pin; // Current output pin
 } SignalEvtData; // Renamed from SignalEvt
 
 // Common Error Codes (optional, can use ESP-IDF codes too)

@@ -469,6 +469,8 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     eventData.duration_sec = engine->_lastAppliedDurationSec; // Populate duration for START/UPDATE
                     eventData.current_ticks = engine->getEstimatedCycleCount(); // Populate with calculated cycles
                 }
+                // Always include the current pin in the event data
+                eventData.output_pin = engine->_outputPin; 
 
                 // Post the event to the default event loop
                 esp_err_t post_err = esp_event_post(SIGNAL_EVENTS, eventId, &eventData, sizeof(eventData), portMAX_DELAY);
