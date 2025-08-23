@@ -69,7 +69,20 @@ void WebFacade::begin()
 
     // --- Configure Web Server Routes & Handlers ---
 
-    // Register API routes
+    // !! IMPORTANT: Register generic OPTIONS handler for API routes BEFORE specific API routes !!
+    // This ensures CORS preflight requests are handled correctly for all API endpoints.
+    _server.on("^\\/api\\/.*$", HTTP_OPTIONS, [](AsyncWebServerRequest *request){
+        Serial.printf("Received OPTIONS %s\n", request->url().c_str());
+        // Send necessary CORS headers for preflight
+        AsyncWebServerResponse *response = request->beginResponse(204); // No Content
+        response->addHeader("Access-Control-Allow-Origin", "*"); // Allow all origins
+        response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"); // Allow common methods
+        response->addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With"); // Allow typical headers
+        request->send(response);
+    });
+    Serial.println("Generic API OPTIONS handler registered.");
+
+    // Register API routes (POST, GET etc. for specific endpoints)
     _apiRouter.registerRoutes();
     Serial.println("API routes registered.");
 
@@ -101,20 +114,12 @@ void WebFacade::begin()
         }
     });
 
-    // Add CORS headers globally
+    // Add CORS headers globally (these apply to non-OPTIONS responses, e.g., the actual GET/POST response)
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+    // Note: DefaultHeaders for Allow-Methods/Headers might be less critical now that OPTIONS is handled explicitly,
+    // but they don't hurt and can help if a 'simple' cross-origin request occurs (rare for APIs).
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-
-    // Handle OPTIONS requests for CORS preflight explicitly for API routes
-    _server.on("^\\/api\\/.*$", HTTP_OPTIONS, [](AsyncWebServerRequest *request){
-        // Send necessary CORS headers for preflight
-        AsyncWebServerResponse *response = request->beginResponse(204); // No Content
-        response->addHeader("Access-Control-Allow-Origin", "*");
-        response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response->addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-        request->send(response);
-    });
 
     // Start the server
     _server.begin();

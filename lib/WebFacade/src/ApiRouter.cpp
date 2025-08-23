@@ -81,6 +81,17 @@ void ApiRouter::registerRoutes() {
         }
     });
 
+    // Add explicit OPTIONS handler for /api/trigger to handle CORS preflight
+    _server.on("/api/trigger", HTTP_OPTIONS, [](AsyncWebServerRequest *request){
+        Serial.println("Received OPTIONS /api/trigger");
+        AsyncWebServerResponse *response = request->beginResponse(204); // No Content
+        // Add essential CORS headers matching the generic handler
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        response->addHeader("Access-Control-Allow-Methods", "POST, OPTIONS"); // Specify allowed methods for this endpoint
+        response->addHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With"); // Specify allowed headers
+        request->send(response);
+    });
+
      _server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
          // Call the dedicated handler method
          this->handleStatusGet(request);
