@@ -11,23 +11,28 @@ ESP_EVENT_DECLARE_BASE(SIGNAL_EVENTS);
 
 // Command Type Enum
 typedef enum {
-    SIG_CMD_START,       // Start generating signal with current/default parameters
-    SIG_CMD_STOP,        // Stop generating signal
-    SIG_CMD_UPDATE_FREQ, // Update frequency only
-    SIG_CMD_UPDATE_DUTY, // Update duty cycle only
-    SIG_CMD_UPDATE_ALL,  // Update both frequency and duty cycle
-    SIG_CMD_SET_PIN,     // Set the output GPIO pin
-    SIG_CMD_SWEEP        // PLACEHOLDER for future sweep/modulation commands
+    SIG_CMD_START,           // Start generating signal with current/default parameters
+    SIG_CMD_STOP,            // Stop generating signal
+    SIG_CMD_UPDATE_FREQ,     // Update frequency only (all channels)
+    SIG_CMD_UPDATE_DUTY,     // Update duty cycle only (single or all channels)
+    SIG_CMD_UPDATE_ALL,      // Update both frequency and duty cycle
+    SIG_CMD_SET_PIN,         // Set the output GPIO pin for a channel
+    SIG_CMD_CONFIG_CHANNEL,  // Configure channel (pin, phase offset, enable)
+    SIG_CMD_ENABLE_CHANNEL,  // Enable/disable a specific channel
+    SIG_CMD_SYNC,            // Trigger synchronization
+    SIG_CMD_SWEEP            // PLACEHOLDER for future sweep/modulation commands
 } SigCmdType;
 
 // Command Structure
 typedef struct {
     SigCmdType type;
-    uint8_t pin;             // GPIO pin number (used for SIG_CMD_SET_PIN)
-    // uint8_t channel; // Re-introduce later if multi-channel support is needed
-    double frequencyHz;  // Frequency in Hz (used for UPDATE_FREQ, UPDATE_ALL, START)
-    float dutyCycle;     // Duty cycle 0.0 to 1.0 (used for UPDATE_DUTY, UPDATE_ALL, START)
-    float durationSec;   // Optional duration in seconds for START command (0=infinite)
+    uint8_t channel;         // Channel number (0-5 for multi-channel support)
+    uint8_t pin;             // GPIO pin number (used for SIG_CMD_SET_PIN, SIG_CMD_CONFIG_CHANNEL)
+    double frequencyHz;      // Frequency in Hz (used for UPDATE_FREQ, UPDATE_ALL, START)
+    float dutyCycle;         // Duty cycle 0.0 to 1.0 (used for UPDATE_DUTY, UPDATE_ALL, START)
+    float durationSec;       // Optional duration in seconds for START command (0=infinite)
+    float phaseOffset;       // Phase offset in degrees (used for SIG_CMD_CONFIG_CHANNEL)
+    bool enabled;            // Enable/disable flag (used for SIG_CMD_ENABLE_CHANNEL)
 } SignalCmd;
 
 // Event Type Enum (IDs for events within SIGNAL_EVENTS base)

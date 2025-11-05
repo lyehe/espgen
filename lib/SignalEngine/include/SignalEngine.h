@@ -1,15 +1,12 @@
 #ifndef SIGNAL_ENGINE_H
 #define SIGNAL_ENGINE_H
 
-#include "LedcDriver.h"
+#include "PulseGenerator.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "esp_event.h"
-// #include "RmtDriver.h" // Include later when RMT is added
-// #include "EngineConfig.h" // Include later for configuration
-// #include "signal_iface.h" // Include later for commands/events
 
 // Declare the event base
 ESP_EVENT_DECLARE_BASE(SIGNAL_EVENTS);
@@ -45,16 +42,16 @@ public:
     SignalError getCurrentStatus(SignalStatus_t& status);
 
 private:
-    // Assuming one LEDC channel for now, based on Phase 1 scope
-    int _outputPin; // Store the output pin
-    LedcDriver ledcChannel0;
+    // Multi-channel pulse generator (MCPWM-based)
+    PulseGenerator pulseGen;
 
     // Current signal state
     double _currentFrequencyHz;
     float _currentDutyCycle;
-    bool _isRunning; // Add a state variable
+    bool _isRunning;
     uint64_t _startTimeMicros; // Timestamp (us) when current segment started
     uint64_t _accumulatedTicks; // Ticks accumulated before the current segment
+
     // Duration Tracking
     float _requestedDurationSec;    // Requested duration for current run (0 = infinite)
     uint64_t _durationStartTimeMicros; // Start time for duration measurement (us)
@@ -64,7 +61,8 @@ private:
     float _lastAppliedDutyCycle;
     float _lastAppliedDurationSec;
 
-    // RmtDriver rmtChannelX; // Add RMT driver instance later
+    // Legacy: Keep track of primary output pin for compatibility
+    int _outputPin;
 
     QueueHandle_t xQueueCmd;           // Queue for receiving SignalCmd structs
     TaskHandle_t xCmdDispatcherHandle; // Handle for the command dispatcher task

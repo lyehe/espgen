@@ -1,11 +1,11 @@
 #include "SignalEngine.h"
-#include <Arduino.h> // For Serial, pinMode etc.
-#include "build_opts.h" // Include project-wide build options/defaults
-#include "signal_iface.h" // Make sure this is included
-#include "esp_event.h" // Include ESP event library
-#include "esp_timer.h" // Include for esp_timer_get_time()
-#include <Preferences.h> // Include Preferences library
-#include "preferences_keys.h" // Include NVS keys definition
+#include <Arduino.h>
+#include "build_opts.h"
+#include "signal_iface.h"
+#include "esp_event.h"
+#include "esp_timer.h"
+#include <Preferences.h>
+#include "preferences_keys.h"
 
 // Define the event base we declared in signal_iface.h
 ESP_EVENT_DEFINE_BASE(SIGNAL_EVENTS);
@@ -16,24 +16,28 @@ const char* NVS_KEY_FREQ = "lastFreq";
 const char* NVS_KEY_DUTY = "lastDuty";
 const char* NVS_KEY_DUR = "lastDur";
 
-// Forward declare the heartbeat task function from LedcDriver.cpp
-// It's better practice to put this in a shared header or manage tasks differently later,
-// but for Phase 1, this keeps LedcDriver self-contained.
-extern void ledc_heartbeat_task(void *pvParameters);
+// Heartbeat task for debugging
+void heartbeat_task(void *pvParameters) {
+    (void)pvParameters;
+    while (1) {
+        Serial.println("alive");
+        vTaskDelay(pdMS_TO_TICKS(5000)); // Print "alive" every 5 seconds
+    }
+}
 
 SignalEngine::SignalEngine() :
-    // _outputPin will be initialized after loading from NVS in begin()
-    ledcChannel0(DEFAULT_OUTPUT_PIN, DEFAULT_LEDC_CHANNEL, DEFAULT_FREQUENCY_HZ, DEFAULT_LEDC_RESOLUTION), // Temp pin, updated in begin()
-    _currentFrequencyHz(DEFAULT_FREQUENCY_HZ), // Initialize state variable
-    _currentDutyCycle(DEFAULT_DUTY_CYCLE),      // Initialize state variable
-    _isRunning(false), // Initialize isRunning state
-    _lastAppliedFrequencyHz(DEFAULT_FREQUENCY_HZ), // Initialize last applied freq
-    _lastAppliedDutyCycle(DEFAULT_DUTY_CYCLE),      // Initialize last applied duty
-    _lastAppliedDurationSec(0.0f),                  // Initialize last applied duration
-    _startTimeMicros(0), // Initialize start time
-    _accumulatedTicks(0), // Initialize accumulated ticks
-    _requestedDurationSec(0), // Initialize duration tracking
-    _durationStartTimeMicros(0)
+    pulseGen(),
+    _currentFrequencyHz(DEFAULT_FREQUENCY_HZ),
+    _currentDutyCycle(DEFAULT_DUTY_CYCLE),
+    _isRunning(false),
+    _lastAppliedFrequencyHz(DEFAULT_FREQUENCY_HZ),
+    _lastAppliedDutyCycle(DEFAULT_DUTY_CYCLE),
+    _lastAppliedDurationSec(0.0f),
+    _startTimeMicros(0),
+    _accumulatedTicks(0),
+    _requestedDurationSec(0),
+    _durationStartTimeMicros(0),
+    _outputPin(DEFAULT_OUTPUT_PIN)
 {
     // Constructor body (if needed)
 }                           
@@ -90,16 +94,26 @@ void SignalEngine::begin() {
     }
     Serial.printf("SignalEngine: Command queue created (size: %d)\n", SIGNAL_ENGINE_CMD_QUEUE_LEN);
 
-    // Initialize the LEDC driver (using the loaded/validated pin)
-    // NOTE: This assumes LedcDriver constructor only stores values and doesn't call hardware functions.
-    //       begin() is where hardware setup happens.
-    ledcChannel0 = LedcDriver(_outputPin, DEFAULT_LEDC_CHANNEL, _currentFrequencyHz, DEFAULT_LEDC_RESOLUTION);
-    ledcChannel0.begin();
+    // Initialize the PulseGenerator
+    if (!pulseGen.begin()) {
+        Serial.println("SignalEngine: Error - Failed to initialize PulseGenerator!");
+        return;
+    }
 
-    // Set initial duty cycle BUT keep it stopped initially
-    // ledcChannel0.setDuty(DEFAULT_DUTY_CYCLE); // Don't start automatically
-    _isRunning = false; // Explicitly set initial state
-    ledcChannel0.stop(); // Make sure it's stopped
+    // Configure default channel (Channel 0) with loaded settings
+    PulseChannelConfig_t ch0_config = {
+        .gpio_pin = (uint8_t)_outputPin,
+        .phase_offset_deg = 0.0,
+        .enabled = true,
+        .skip_count = 0
+    };
+    pulseGen.configureChannel(0, ch0_config);
+
+    // Set frequency and duty cycle
+    pulseGen.setFrequency(_currentFrequencyHz);
+    pulseGen.setDutyCycle(0, _currentDutyCycle);
+
+    _isRunning = false; // Explicitly set initial state (not started yet)
 
     Serial.printf("SignalEngine: Initialized (Stopped). Default F=%.2f Hz, D=%.2f%%\n", _currentFrequencyHz, _currentDutyCycle * 100.0);
 
@@ -123,14 +137,14 @@ void SignalEngine::begin() {
     // Create the heartbeat task (as per Phase 1 requirements)
     // Stack size might need adjustment later. Priority 1 is low.
     xTaskCreate(
-        ledc_heartbeat_task,    // Task function
+        heartbeat_task,         // Task function
         "HeartbeatTask",        // Name of the task
         1024,                   // Stack size in words
         NULL,                   // Task input parameter
         1,                      // Priority of the task
         NULL                    // Task handle
     );
-     Serial.println("SignalEngine: Heartbeat task started.");
+    Serial.println("SignalEngine: Heartbeat task started.");
 
     Serial.println("SignalEngine: Initialization complete.");
 }
@@ -312,15 +326,17 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                          Serial.println(" - Duration: Infinite");
                     }
 
-                    ledcAttachPin(engine->_outputPin, engine->ledcChannel0.getChannel());
-                    engine->ledcChannel0.setFrequency(receivedCmd.frequencyHz);
-                    engine->ledcChannel0.setDuty(receivedCmd.dutyCycle);
+                    // Apply settings to pulse generator
+                    engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
+                    engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Apply to channel 0
+                    engine->pulseGen.start(); // Start all enabled channels
+
                     engine->_currentFrequencyHz = receivedCmd.frequencyHz;
                     engine->_currentDutyCycle = receivedCmd.dutyCycle;
                     engine->_isRunning = true;
                     stateChanged = true;
                     eventId = SIG_EVT_STARTED; // Specific event ID for start
-                    Serial.printf("CmdDispatcherTask: START applied (Pin %d attached) F=%.2f Hz, D=%.2f%% - Running (Start time: %llu us)\n", engine->_outputPin, engine->_currentFrequencyHz, engine->_currentDutyCycle * 100.0, engine->_startTimeMicros);
+                    Serial.printf("CmdDispatcherTask: START applied F=%.2f Hz, D=%.2f%% - Running (Start time: %llu us)\n", engine->_currentFrequencyHz, engine->_currentDutyCycle * 100.0, engine->_startTimeMicros);
                     break;
 
                 case SIG_CMD_STOP:
@@ -338,7 +354,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     eventData.current_ticks = engine->_accumulatedTicks; // Use final accumulated value
                     
                     // Now stop the hardware and reset state
-                    engine->ledcChannel0.stop();
+                    engine->pulseGen.stop();
                     engine->_isRunning = false;
                     engine->_startTimeMicros = 0; // Reset start time on stop
                     engine->_requestedDurationSec = 0; // Cancel any duration timer
@@ -351,9 +367,9 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     // Event will be posted after the switch statement using the eventData set above
                     break;
 
-                 case SIG_CMD_UPDATE_FREQ: // (If re-enabled)
+                 case SIG_CMD_UPDATE_FREQ:
                      Serial.printf("CmdDispatcherTask: Processing UPDATE_FREQ to %.2f Hz\n", receivedCmd.frequencyHz);
-                     engine->ledcChannel0.setFrequency(receivedCmd.frequencyHz);
+                     engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
                      engine->_currentFrequencyHz = receivedCmd.frequencyHz;
                      if (engine->_isRunning) { // Only trigger event if running
                          stateChanged = true;
@@ -362,9 +378,9 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                      Serial.printf("CmdDispatcherTask: Frequency updated. Running: %s\n", engine->_isRunning ? "true" : "false");
                      break;
 
-                 case SIG_CMD_UPDATE_DUTY: // (If re-enabled)
-                      Serial.printf("CmdDispatcherTask: Processing UPDATE_DUTY to %.2f%%\n", receivedCmd.dutyCycle * 100.0);
-                     engine->ledcChannel0.setDuty(receivedCmd.dutyCycle);
+                 case SIG_CMD_UPDATE_DUTY:
+                     Serial.printf("CmdDispatcherTask: Processing UPDATE_DUTY to %.2f%%\n", receivedCmd.dutyCycle * 100.0);
+                     engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Update channel 0
                      engine->_currentDutyCycle = receivedCmd.dutyCycle;
                      if (engine->_isRunning) { // Only trigger event if running
                          stateChanged = true;
@@ -385,8 +401,8 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         }
                         
                         // Apply new settings
-                        engine->ledcChannel0.setFrequency(receivedCmd.frequencyHz);
-                        engine->ledcChannel0.setDuty(receivedCmd.dutyCycle);
+                        engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
+                        engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle);
                         engine->_currentFrequencyHz = receivedCmd.frequencyHz;
                         engine->_currentDutyCycle = receivedCmd.dutyCycle;
                         
@@ -420,7 +436,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     if (receivedCmd.pin >= 12 && receivedCmd.pin <= 19) {
                         if (receivedCmd.pin != engine->_outputPin) {
                             Serial.printf("CmdDispatcherTask: Pin changed from %d to %d. Applying.\n", engine->_outputPin, receivedCmd.pin);
-                            
+
                             // Save the new pin to NVS
                             preferences.begin(DEVICE_CFG_NAMESPACE, false); // Open R/W
                             preferences.putUChar(OUTPUT_PIN_KEY, receivedCmd.pin);
@@ -429,24 +445,53 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
                             // Update the engine's internal state
                             engine->_outputPin = receivedCmd.pin;
-                            
-                            // Re-attach the driver to the new pin
-                            // Note: This might briefly interrupt the signal if it's running
-                            engine->ledcChannel0.reAttachPin(engine->_outputPin);
-                            
-                            // Optional: Post an event?
-                            // eventId = SIG_EVT_CONFIG_CHANGED; // Define this event if needed
-                            // stateChanged = true; 
+
+                            // Reconfigure channel 0 with the new pin
+                            PulseChannelConfig_t ch0_config = {
+                                .gpio_pin = receivedCmd.pin,
+                                .phase_offset_deg = 0.0,
+                                .enabled = true,
+                                .skip_count = 0
+                            };
+                            engine->pulseGen.configureChannel(0, ch0_config);
+
                             Serial.printf("CmdDispatcherTask: Output pin successfully set to %d.\n", engine->_outputPin);
                         } else {
                             Serial.printf("CmdDispatcherTask: Pin %d is already the current pin. No change needed.\n", receivedCmd.pin);
                         }
                     } else {
                         Serial.printf("CmdDispatcherTask: Error - Invalid pin %d received. Must be between 12 and 19.\n", receivedCmd.pin);
-                        // Optional: Send error response/event?
                     }
                     // No state change event needed for pin change unless explicitly desired
                     stateChanged = false; // Prevent default PARAM_CHANGED event
+                    break;
+
+                case SIG_CMD_CONFIG_CHANNEL:
+                    Serial.printf("CmdDispatcherTask: Configuring channel %d (Pin: %d, Phase: %.1f°)\n",
+                                 receivedCmd.channel, receivedCmd.pin, receivedCmd.phaseOffset);
+                    {
+                        PulseChannelConfig_t ch_config = {
+                            .gpio_pin = receivedCmd.pin,
+                            .phase_offset_deg = receivedCmd.phaseOffset,
+                            .enabled = receivedCmd.enabled,
+                            .skip_count = 0
+                        };
+                        engine->pulseGen.configureChannel(receivedCmd.channel, ch_config);
+                    }
+                    stateChanged = false;
+                    break;
+
+                case SIG_CMD_ENABLE_CHANNEL:
+                    Serial.printf("CmdDispatcherTask: %s channel %d\n",
+                                 receivedCmd.enabled ? "Enabling" : "Disabling", receivedCmd.channel);
+                    engine->pulseGen.enableChannel(receivedCmd.channel, receivedCmd.enabled);
+                    stateChanged = false;
+                    break;
+
+                case SIG_CMD_SYNC:
+                    Serial.println("CmdDispatcherTask: Triggering sync");
+                    engine->pulseGen.triggerSync();
+                    stateChanged = false;
                     break;
 
                 case SIG_CMD_SWEEP: // Placeholder
