@@ -304,11 +304,44 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
             switch (receivedCmd.type) {
                 case SIG_CMD_START:
                     Serial.println("CmdDispatcherTask: Processing START");
-                    // Update Last Applied Params in memory
-                    engine->_lastAppliedFrequencyHz = receivedCmd.frequencyHz;
-                    engine->_lastAppliedDutyCycle = receivedCmd.dutyCycle;
-                    engine->_lastAppliedDurationSec = receivedCmd.durationSec;
-                    engine->_lastAppliedPulseCount = receivedCmd.pulseCount;
+
+                    // Update frequency/period (check which mode is being used)
+                    if (receivedCmd.paramMode & PARAM_USE_FREQUENCY) {
+                        engine->_lastAppliedFrequencyHz = receivedCmd.frequencyHz;
+                    } else if (receivedCmd.paramMode & PARAM_USE_PERIOD) {
+                        // Convert period to frequency for internal storage
+                        engine->_lastAppliedFrequencyHz = periodToFreqHz(receivedCmd.periodUs);
+                    } else {
+                        // Default to current frequency if not specified
+                        engine->_lastAppliedFrequencyHz = engine->_currentFrequencyHz;
+                    }
+
+                    // Update duty cycle/pulse width (check which mode is being used)
+                    if (receivedCmd.paramMode & PARAM_USE_DUTY_CYCLE) {
+                        engine->_lastAppliedDutyCycle = receivedCmd.dutyCycle;
+                    } else if (receivedCmd.paramMode & PARAM_USE_PULSE_WIDTH) {
+                        // Convert pulse width to duty cycle for internal storage
+                        uint32_t currentPeriodUs = engine->pulseGen.getPeriodUs();
+                        if (currentPeriodUs > 0) {
+                            engine->_lastAppliedDutyCycle = pulseWidthToDuty(receivedCmd.pulseWidthUs, currentPeriodUs);
+                        }
+                    } else {
+                        // Default to current duty if not specified
+                        engine->_lastAppliedDutyCycle = engine->_currentDutyCycle;
+                    }
+
+                    // Update duration/pulse count (check which mode is being used)
+                    if (receivedCmd.paramMode & PARAM_USE_DURATION) {
+                        engine->_lastAppliedDurationSec = receivedCmd.durationSec;
+                        engine->_lastAppliedPulseCount = 0; // Clear pulse count when using duration
+                    } else if (receivedCmd.paramMode & PARAM_USE_PULSE_COUNT) {
+                        engine->_lastAppliedPulseCount = receivedCmd.pulseCount;
+                        engine->_lastAppliedDurationSec = 0.0f; // Clear duration when using pulse count
+                    } else {
+                        // Default to no duration/count if not specified
+                        engine->_lastAppliedDurationSec = 0.0f;
+                        engine->_lastAppliedPulseCount = 0;
+                    }
 
                     Serial.printf(" - Stored Last Applied: F=%.2f Hz, D=%.2f%%",
                                   engine->_lastAppliedFrequencyHz,
@@ -321,7 +354,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         Serial.printf(", Dur=%.2f s\n", engine->_lastAppliedDurationSec);
                     }
 
-                    // --- Save Settings to NVS --- 
+                    // --- Save Settings to NVS ---
                     preferences.begin(NVS_NAMESPACE, false);
                     preferences.putDouble(NVS_KEY_FREQ, engine->_lastAppliedFrequencyHz);
                     preferences.putFloat(NVS_KEY_DUTY, engine->_lastAppliedDutyCycle);
@@ -371,13 +404,24 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         }
                     }
 
-                    // Apply settings to pulse generator
-                    engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
-                    engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Apply to channel 0
+                    // Apply settings to pulse generator (check which parameters to use)
+                    if (receivedCmd.paramMode & PARAM_USE_PERIOD) {
+                        engine->pulseGen.setPeriod(receivedCmd.periodUs);
+                    } else if (receivedCmd.paramMode & PARAM_USE_FREQUENCY) {
+                        engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
+                    }
+
+                    if (receivedCmd.paramMode & PARAM_USE_PULSE_WIDTH) {
+                        engine->pulseGen.setPulseWidth(0, receivedCmd.pulseWidthUs); // Apply to channel 0
+                    } else if (receivedCmd.paramMode & PARAM_USE_DUTY_CYCLE) {
+                        engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Apply to channel 0
+                    }
+
                     engine->pulseGen.start(); // Start all enabled channels
 
-                    engine->_currentFrequencyHz = receivedCmd.frequencyHz;
-                    engine->_currentDutyCycle = receivedCmd.dutyCycle;
+                    // Update current state with what was actually applied
+                    engine->_currentFrequencyHz = engine->_lastAppliedFrequencyHz;
+                    engine->_currentDutyCycle = engine->_lastAppliedDutyCycle;
                     engine->_isRunning = true;
                     stateChanged = true;
                     eventId = SIG_EVT_STARTED; // Specific event ID for start

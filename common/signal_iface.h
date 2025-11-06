@@ -136,31 +136,23 @@ typedef struct {
 typedef struct {
     // Timing specification (use one of each pair)
     union {
-        struct {
-            double frequencyHz;     // Frequency in Hz (0.001 Hz to 40 MHz)
-            uint32_t periodUs;      // Period in microseconds
-        };
+        double frequencyHz;     // Frequency in Hz (0.001 Hz to 40 MHz)
+        uint32_t periodUs;      // Period in microseconds
     };
 
     union {
-        struct {
-            float dutyCycle;        // Duty cycle 0.0 to 1.0
-            uint32_t pulseWidthUs;  // Pulse width in microseconds
-        };
+        float dutyCycle;        // Duty cycle 0.0 to 1.0
+        uint32_t pulseWidthUs;  // Pulse width in microseconds
     };
 
     union {
-        struct {
-            float durationSec;      // Duration in seconds (0 = infinite)
-            uint32_t pulseCount;    // Exact number of pulses (0 = infinite)
-        };
+        float durationSec;      // Duration in seconds (0 = infinite)
+        uint64_t pulseCount;    // Exact number of pulses (0 = infinite)
     };
 
     union {
-        struct {
-            float phaseOffsetDeg;   // Phase offset in degrees (0-360)
-            uint32_t phaseDelayUs;  // Phase delay in microseconds
-        };
+        float phaseOffsetDeg;   // Phase offset in degrees (0-360)
+        uint32_t phaseDelayUs;  // Phase delay in microseconds
     };
 
     // Additional timing
@@ -231,9 +223,9 @@ static inline float pulseWidthToDuty(uint32_t pulseWidthUs, uint32_t periodUs) {
  * @param freqHz Frequency in Hz
  * @return Number of pulses
  */
-static inline uint32_t durationToPulseCount(float durationSec, double freqHz) {
+static inline uint64_t durationToPulseCount(float durationSec, double freqHz) {
     if (durationSec <= 0 || freqHz <= 0) return 0;
-    return (uint32_t)(durationSec * freqHz);
+    return (uint64_t)(durationSec * freqHz);
 }
 
 /**
@@ -242,7 +234,7 @@ static inline uint32_t durationToPulseCount(float durationSec, double freqHz) {
  * @param freqHz Frequency in Hz
  * @return Duration in seconds
  */
-static inline float pulseCountToDuration(uint32_t pulseCount, double freqHz) {
+static inline float pulseCountToDuration(uint64_t pulseCount, double freqHz) {
     if (pulseCount == 0 || freqHz <= 0) return 0;
     return (float)pulseCount / (float)freqHz;
 }

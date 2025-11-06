@@ -176,16 +176,42 @@ static inline bool validateSignalCmd(const SignalCmd* cmd) {
         return false;
     }
 
-    // Validate ranges
+    // Validate ranges for frequency
     if (cmd->paramMode & PARAM_USE_FREQUENCY) {
         if (cmd->frequencyHz <= 0 || cmd->frequencyHz > 40000000) {
-            return false; // Invalid frequency range
+            return false; // Invalid frequency range (must be positive, max 40MHz)
         }
     }
 
+    // Validate ranges for period
+    if (cmd->paramMode & PARAM_USE_PERIOD) {
+        if (cmd->periodUs < 25 || cmd->periodUs > 1000000000) {
+            return false; // Invalid period range (25ns to 1000s)
+        }
+    }
+
+    // Validate ranges for duty cycle
     if (cmd->paramMode & PARAM_USE_DUTY_CYCLE) {
         if (cmd->dutyCycle < 0.0 || cmd->dutyCycle > 1.0) {
             return false; // Invalid duty cycle range
+        }
+    }
+
+    // Validate ranges for pulse width (can't be negative, checked via uint32_t)
+    // Note: pulse width vs period check would require knowing the period,
+    // which may not be available at validation time
+
+    // Validate phase degrees
+    if (cmd->paramMode & PARAM_USE_PHASE_DEGREES) {
+        if (cmd->phaseOffset < 0.0 || cmd->phaseOffset >= 360.0) {
+            return false; // Phase must be 0-360 degrees
+        }
+    }
+
+    // Validate duration (negative duration doesn't make sense)
+    if (cmd->paramMode & PARAM_USE_DURATION) {
+        if (cmd->durationSec < 0.0) {
+            return false; // Duration cannot be negative
         }
     }
 
