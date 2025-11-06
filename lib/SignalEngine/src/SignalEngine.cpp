@@ -100,14 +100,8 @@ void SignalEngine::begin() {
         return;
     }
 
-    // Configure default channel (Channel 0) with loaded settings
-    PulseChannelConfig_t ch0_config = {
-        .gpio_pin = (uint8_t)_outputPin,
-        .phase_offset_deg = 0.0,
-        .enabled = true,
-        .skip_count = 0
-    };
-    pulseGen.configureChannel(0, ch0_config);
+    // Configure master channel (Channel 0) with loaded settings
+    pulseGen.configureMaster((uint8_t)_outputPin);
 
     // Set frequency and duty cycle
     pulseGen.setFrequency(_currentFrequencyHz);
@@ -115,7 +109,8 @@ void SignalEngine::begin() {
 
     _isRunning = false; // Explicitly set initial state (not started yet)
 
-    Serial.printf("SignalEngine: Initialized (Stopped). Default F=%.2f Hz, D=%.2f%%\n", _currentFrequencyHz, _currentDutyCycle * 100.0);
+    Serial.printf("SignalEngine: Initialized (Stopped). Master channel on Pin %d, F=%.2f Hz, D=%.2f%%\n",
+                  _outputPin, _currentFrequencyHz, _currentDutyCycle * 100.0);
 
     // Create the command dispatcher task
     BaseType_t taskCreated = xTaskCreate(
@@ -446,16 +441,10 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                             // Update the engine's internal state
                             engine->_outputPin = receivedCmd.pin;
 
-                            // Reconfigure channel 0 with the new pin
-                            PulseChannelConfig_t ch0_config = {
-                                .gpio_pin = receivedCmd.pin,
-                                .phase_offset_deg = 0.0,
-                                .enabled = true,
-                                .skip_count = 0
-                            };
-                            engine->pulseGen.configureChannel(0, ch0_config);
+                            // Reconfigure master channel (channel 0) with the new pin
+                            engine->pulseGen.configureMaster(receivedCmd.pin);
 
-                            Serial.printf("CmdDispatcherTask: Output pin successfully set to %d.\n", engine->_outputPin);
+                            Serial.printf("CmdDispatcherTask: Master output pin successfully set to %d.\n", engine->_outputPin);
                         } else {
                             Serial.printf("CmdDispatcherTask: Pin %d is already the current pin. No change needed.\n", receivedCmd.pin);
                         }
@@ -467,16 +456,18 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     break;
 
                 case SIG_CMD_CONFIG_CHANNEL:
-                    Serial.printf("CmdDispatcherTask: Configuring channel %d (Pin: %d, Phase: %.1f°)\n",
-                                 receivedCmd.channel, receivedCmd.pin, receivedCmd.phaseOffset);
+                    // Note: Typically used for slave channels (1-5). Master channel (0) should use SET_PIN.
+                    Serial.printf("CmdDispatcherTask: Configuring channel %d (Pin: %d, Phase: %.1f°, Enabled: %d)\n",
+                                 receivedCmd.channel, receivedCmd.pin, receivedCmd.phaseOffset, receivedCmd.enabled);
                     {
-                        PulseChannelConfig_t ch_config = {
-                            .gpio_pin = receivedCmd.pin,
-                            .phase_offset_deg = receivedCmd.phaseOffset,
-                            .enabled = receivedCmd.enabled,
-                            .skip_count = 0
-                        };
-                        engine->pulseGen.configureChannel(receivedCmd.channel, ch_config);
+                        if (receivedCmd.channel == 0) {
+                            // Configure master using the simpler API
+                            engine->pulseGen.configureMaster(receivedCmd.pin);
+                        } else {
+                            // Configure slave with phase offset
+                            engine->pulseGen.configureSlave(receivedCmd.channel, receivedCmd.pin,
+                                                           receivedCmd.phaseOffset, receivedCmd.enabled);
+                        }
                     }
                     stateChanged = false;
                     break;

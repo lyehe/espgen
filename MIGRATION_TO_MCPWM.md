@@ -3,6 +3,18 @@
 ## Overview
 This update replaces the LEDC-based PWM driver with a new MCPWM-based multi-channel pulse generator, enabling synchronized trigger signals with phase offset and skip capabilities.
 
+## Master/Slave Architecture
+
+The pulse generator implements a **master/slave architecture**:
+- **Master Channel (Channel 0)**: Always enabled, controls the primary output
+- **Slave Channels (Channels 1-5)**: Follow the master, can be individually disabled
+
+This architecture ensures:
+- Master channel cannot be accidentally disabled
+- All enabled slaves are hardware-synchronized to the master
+- Individual slave channels can be enabled/disabled without affecting others
+- Frequency changes apply to all channels simultaneously
+
 ## What Changed
 
 ### Removed Components
@@ -39,52 +51,94 @@ This update replaces the LEDC-based PWM driver with a new MCPWM-based multi-chan
 
 ## Key Features
 
-### Multi-Channel Support
-Configure up to 6 independent pulse outputs:
+### Multi-Channel Support (Master/Slave Architecture)
+
+Configure the master and slave channels:
+
 ```cpp
-PulseChannelConfig_t ch0_config = {
-    .gpio_pin = 18,
-    .phase_offset_deg = 0.0,    // No offset
-    .enabled = true,
-    .skip_count = 0
-};
+// Configure master channel (always enabled)
+pulseGen.configureMaster(18);  // Master on GPIO 18
 
-PulseChannelConfig_t ch1_config = {
-    .gpio_pin = 19,
-    .phase_offset_deg = 90.0,   // 90° phase offset from channel 0
-    .enabled = true,
-    .skip_count = 0
-};
+// Configure slave channels with phase offsets
+pulseGen.configureSlave(1, 19, 0.0,   true);   // Slave 1: GPIO 19, 0° offset, enabled
+pulseGen.configureSlave(2, 21, 90.0,  true);   // Slave 2: GPIO 21, 90° offset, enabled
+pulseGen.configureSlave(3, 22, 180.0, true);   // Slave 3: GPIO 22, 180° offset, enabled
+pulseGen.configureSlave(4, 23, 270.0, false);  // Slave 4: GPIO 23, 270° offset, DISABLED
 
-pulseGen.configureChannel(0, ch0_config);
-pulseGen.configureChannel(1, ch1_config);
+// Set global frequency (applies to all channels)
+pulseGen.setFrequency(1000);  // 1 kHz
+
+// Set individual duty cycles
+pulseGen.setDutyCycle(0, 0.5);  // Master: 50% duty
+pulseGen.setDutyCycle(1, 0.25); // Slave 1: 25% duty
+pulseGen.setDutyCycle(2, 0.75); // Slave 2: 75% duty
+
+// Start synchronized pulse generation
+pulseGen.start();
+
+// Later: Enable/disable slaves without stopping master
+pulseGen.enableSlave(4, true);   // Enable slave 4
+pulseGen.disableAllSlaves();     // Disable all slaves (master still runs)
+pulseGen.enableAllSlaves();      // Re-enable all configured slaves
 ```
 
 ### Hardware Synchronization
 All channels start simultaneously with precise phase relationships maintained by the MCPWM hardware.
 
 ### New Command API
+
 ```cpp
-// Configure a channel with phase offset
-SignalCmd configCmd = {
+// Configure master channel (channel 0)
+SignalCmd setMasterPinCmd = {
+    .type = SIG_CMD_SET_PIN,
+    .channel = 0,
+    .pin = 18
+};
+
+// Configure slave channel with phase offset
+SignalCmd configSlaveCmd = {
     .type = SIG_CMD_CONFIG_CHANNEL,
-    .channel = 1,
+    .channel = 1,           // Slave channel 1
     .pin = 19,
-    .phaseOffset = 90.0,
+    .phaseOffset = 90.0,    // 90° offset from master
     .enabled = true
 };
 
-// Enable/disable specific channels
-SignalCmd enableCmd = {
+// Enable/disable specific slave channels
+SignalCmd enableSlaveCmd = {
     .type = SIG_CMD_ENABLE_CHANNEL,
-    .channel = 2,
-    .enabled = false  // Skip this channel
+    .channel = 2,           // Slave channel 2
+    .enabled = false        // Disable (skip) this slave
 };
+// Note: Attempting to disable channel 0 (master) will fail
 
 // Trigger software sync to realign all channels
 SignalCmd syncCmd = {
     .type = SIG_CMD_SYNC
 };
+```
+
+### Master/Slave Channel Control
+
+The master/slave architecture provides clear control semantics:
+
+```cpp
+// Master channel (0) methods
+pulseGen.configureMaster(gpio_pin);              // Configure master
+pulseGen.isMasterChannel(channel_id);            // Check if channel is master
+pulseGen.getMasterDutyCycle();                   // Get master duty cycle
+
+// Slave channel (1-5) methods
+pulseGen.configureSlave(id, pin, phase, enabled); // Configure slave
+pulseGen.enableSlave(id, enabled);                // Enable/disable slave
+pulseGen.disableAllSlaves();                      // Disable all slaves
+pulseGen.enableAllSlaves();                       // Enable all slaves
+pulseGen.getEnabledSlaveCount();                  // Count enabled slaves
+
+// Protection
+// - Master (channel 0) cannot be disabled
+// - enableChannel(0, false) returns false
+// - Master always remains active during pulse generation
 ```
 
 ## Backward Compatibility

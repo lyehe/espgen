@@ -16,7 +16,7 @@ PulseGenerator::PulseGenerator() :
     for (int i = 0; i < MAX_PULSE_CHANNELS; i++) {
         _channels[i].gpio_pin = 0;
         _channels[i].phase_offset_deg = 0.0;
-        _channels[i].enabled = false;
+        _channels[i].enabled = (i == MASTER_CHANNEL);  // Master is always enabled
         _channels[i].skip_count = 0;
         _duty_cycles[i] = DEFAULT_DUTY_CYCLE;
     }
@@ -65,20 +65,52 @@ bool PulseGenerator::configureChannel(uint8_t channel_id, const PulseChannelConf
         return false;
     }
 
-    Serial.printf("PulseGenerator: Configuring channel %d (Pin: %d, Phase: %.1f°, Enabled: %d)\n",
-                  channel_id, config.gpio_pin, config.phase_offset_deg, config.enabled);
-
     // Store configuration
     _channels[channel_id] = config;
 
+    // Master channel (channel 0) is ALWAYS enabled
+    if (channel_id == MASTER_CHANNEL) {
+        _channels[channel_id].enabled = true;
+        Serial.printf("PulseGenerator: Configuring MASTER channel (Pin: %d, Phase: %.1f°)\n",
+                      config.gpio_pin, config.phase_offset_deg);
+    } else {
+        Serial.printf("PulseGenerator: Configuring SLAVE channel %d (Pin: %d, Phase: %.1f°, Enabled: %d)\n",
+                      channel_id, config.gpio_pin, config.phase_offset_deg, config.enabled);
+    }
+
     // Configure GPIO pin
-    if (config.gpio_pin > 0 && config.enabled) {
+    if (config.gpio_pin > 0 && _channels[channel_id].enabled) {
         mcpwm_gpio_init(_mcpwm_unit, _io_signals[channel_id], config.gpio_pin);
         Serial.printf("PulseGenerator: GPIO %d configured for channel %d signal\n",
                      config.gpio_pin, channel_id);
     }
 
     return true;
+}
+
+bool PulseGenerator::configureMaster(uint8_t gpio_pin) {
+    PulseChannelConfig_t master_config = {
+        .gpio_pin = gpio_pin,
+        .phase_offset_deg = 0.0,  // Master has no phase offset
+        .enabled = true,           // Master is always enabled
+        .skip_count = 0
+    };
+    return configureChannel(MASTER_CHANNEL, master_config);
+}
+
+bool PulseGenerator::configureSlave(uint8_t slave_id, uint8_t gpio_pin, float phase_offset_deg, bool enabled) {
+    if (slave_id == MASTER_CHANNEL || slave_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: Invalid slave ID %d (must be 1-%d)\n", slave_id, MAX_PULSE_CHANNELS - 1);
+        return false;
+    }
+
+    PulseChannelConfig_t slave_config = {
+        .gpio_pin = gpio_pin,
+        .phase_offset_deg = phase_offset_deg,
+        .enabled = enabled,
+        .skip_count = 0
+    };
+    return configureChannel(slave_id, slave_config);
 }
 
 bool PulseGenerator::setFrequency(double frequency_hz) {
@@ -206,8 +238,19 @@ bool PulseGenerator::enableChannel(uint8_t channel_id, bool enabled) {
         return false;
     }
 
+    // Master channel (channel 0) CANNOT be disabled
+    if (channel_id == MASTER_CHANNEL && !enabled) {
+        Serial.println("PulseGenerator: ERROR - Cannot disable master channel!");
+        return false;
+    }
+
     _channels[channel_id].enabled = enabled;
-    Serial.printf("PulseGenerator: Channel %d %s\n", channel_id, enabled ? "enabled" : "disabled");
+
+    if (channel_id == MASTER_CHANNEL) {
+        Serial.println("PulseGenerator: Master channel remains enabled");
+    } else {
+        Serial.printf("PulseGenerator: Slave channel %d %s\n", channel_id, enabled ? "enabled" : "disabled");
+    }
 
     if (!enabled && _is_running) {
         // If disabling while running, set duty to 0
@@ -218,6 +261,31 @@ bool PulseGenerator::enableChannel(uint8_t channel_id, bool enabled) {
     }
 
     return true;
+}
+
+bool PulseGenerator::enableSlave(uint8_t slave_id, bool enabled) {
+    if (slave_id == MASTER_CHANNEL || slave_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: Invalid slave ID %d (must be 1-%d)\n", slave_id, MAX_PULSE_CHANNELS - 1);
+        return false;
+    }
+    return enableChannel(slave_id, enabled);
+}
+
+void PulseGenerator::disableAllSlaves() {
+    Serial.println("PulseGenerator: Disabling all slave channels...");
+    for (uint8_t i = 1; i < MAX_PULSE_CHANNELS; i++) {  // Start from 1 to skip master
+        enableChannel(i, false);
+    }
+}
+
+void PulseGenerator::enableAllSlaves() {
+    Serial.println("PulseGenerator: Enabling all slave channels...");
+    for (uint8_t i = 1; i < MAX_PULSE_CHANNELS; i++) {  // Start from 1 to skip master
+        // Only enable if the channel has been configured (has a valid pin)
+        if (_channels[i].gpio_pin > 0) {
+            enableChannel(i, true);
+        }
+    }
 }
 
 bool PulseGenerator::triggerSync() {
@@ -250,6 +318,16 @@ uint8_t PulseGenerator::getChannelPin(uint8_t channel_id) const {
         return 0;
     }
     return _channels[channel_id].gpio_pin;
+}
+
+uint8_t PulseGenerator::getEnabledSlaveCount() const {
+    uint8_t count = 0;
+    for (uint8_t i = 1; i < MAX_PULSE_CHANNELS; i++) {  // Start from 1 to skip master
+        if (_channels[i].enabled && _channels[i].gpio_pin > 0) {
+            count++;
+        }
+    }
+    return count;
 }
 
 // Private helper functions
