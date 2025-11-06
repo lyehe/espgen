@@ -48,18 +48,32 @@ typedef struct {
     uint8_t channel;         // Channel number (0-5 for multi-channel support)
     uint8_t pin;             // GPIO pin number (used for SIG_CMD_SET_PIN, SIG_CMD_CONFIG_CHANNEL)
 
-    // Legacy parameters (still supported for backward compatibility)
-    double frequencyHz;      // Frequency in Hz
-    float dutyCycle;         // Duty cycle 0.0 to 1.0
-    float durationSec;       // Duration in seconds (0=infinite)
-    float phaseOffset;       // Phase offset in degrees
+    // Timing: Frequency OR Period (use paramMode to select)
+    union {
+        double frequencyHz;      // Frequency in Hz
+        uint32_t periodUs;       // Period in microseconds (alternative to frequency)
+    };
 
-    // New exact parameters (SIG_CMD_SET_PARAMS)
-    uint32_t periodUs;       // Period in microseconds (alternative to frequency)
-    uint32_t pulseWidthUs;   // Pulse width in microseconds (alternative to duty cycle)
-    uint32_t pulseCount;     // Exact number of pulses (alternative to duration, 0=infinite)
-    uint32_t phaseDelayUs;   // Phase delay in microseconds (alternative to degrees)
-    uint32_t startDelayUs;   // Delay before first pulse (microseconds)
+    // Pulse width: Duty Cycle OR Pulse Width (use paramMode to select)
+    union {
+        float dutyCycle;         // Duty cycle 0.0 to 1.0
+        uint32_t pulseWidthUs;   // Pulse width in microseconds (alternative to duty cycle)
+    };
+
+    // Run time: Duration OR Pulse Count (use paramMode to select)
+    union {
+        float durationSec;       // Duration in seconds (0=infinite)
+        uint64_t pulseCount;     // Exact number of pulses (alternative to duration, 0=infinite)
+    };
+
+    // Phase: Degrees OR Time Delay (use paramMode to select)
+    union {
+        float phaseOffset;       // Phase offset in degrees
+        uint32_t phaseDelayUs;   // Phase delay in microseconds (alternative to degrees)
+    };
+
+    // Additional timing
+    uint32_t startDelayUs;   // Delay before first pulse (microseconds, future feature)
 
     // Control flags
     uint16_t paramMode;      // Bitfield of ParamMode flags indicating which params to use

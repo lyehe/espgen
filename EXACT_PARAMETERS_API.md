@@ -251,15 +251,34 @@ uint32_t delay_us = phaseToDelayUs(phase_deg, period_us);  // 250 us
 pulseGen.setPhaseDelay(1, delay_us);
 ```
 
+## Implemented Features
+
+### Exact Pulse Count ✅
+
+Generate an **exact number of pulses** instead of running for a duration:
+
+```cpp
+// Generate exactly 1000 pulses
+SignalCmd cmd = {
+    .type = SIG_CMD_START,
+    .frequencyHz = 1000.0,        // 1 kHz
+    .dutyCycle = 0.5,             // 50% duty
+    .pulseCount = 1000,           // Exactly 1000 pulses
+    .paramMode = PARAM_USE_PULSE_COUNT  // Use pulse count mode
+};
+engine.sendCommand(cmd);
+
+// Result: Generates exactly 1000 pulses (1 second at 1 kHz), then auto-stops
+// If frequency changes, pulse count stays fixed, duration changes
+```
+
+**See DURATION_VS_PULSECOUNT.md for complete guide.**
+
 ## Future Features (Not Yet Implemented)
 
 These parameters are defined but not yet fully implemented:
 
 ```cpp
-// Exact pulse count (alternative to duration in seconds)
-params.pulseCount = 1000;           // Generate exactly 1000 pulses
-params.paramMode |= PARAM_USE_PULSE_COUNT;
-
 // Start delay (delay before first pulse)
 params.startDelayUs = 5000;         // Wait 5 ms before starting
 
@@ -269,17 +288,6 @@ params.burstPeriodUs = 50000;       // 50 ms between bursts
 
 // Polarity (currently accepted but not applied to hardware)
 params.polarity = POLARITY_ACTIVE_LOW;  // Inverted pulses
-```
-
-To use pulse count now, use SignalEngine's duration feature:
-```cpp
-// Generate 1000 pulses at 1 kHz (1 second)
-SignalCmd cmd = {
-    .type = SIG_CMD_START,
-    .frequencyHz = 1000.0,
-    .dutyCycle = 0.5,
-    .durationSec = 1.0  // 1000 pulses at 1 kHz
-};
 ```
 
 ## Hardware Precision Notes

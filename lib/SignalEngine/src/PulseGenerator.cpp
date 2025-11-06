@@ -492,12 +492,13 @@ bool PulseGenerator::setParams(uint8_t channel_id, const PulseParams_t& params) 
     // Apply polarity
     setPolarity(channel_id, params.polarity);
 
-    // Note: Start delay, pulse count, and burst mode not yet implemented
+    // Note: Pulse count is handled by SignalEngine, not PulseGenerator
+    // Start delay and burst mode not yet implemented
     if (params.startDelayUs > 0) {
         Serial.println("PulseGenerator: Warning - startDelayUs not yet implemented");
     }
     if (params.pulseCount > 0) {
-        Serial.println("PulseGenerator: Warning - pulseCount not yet implemented (use SignalEngine duration)");
+        Serial.println("PulseGenerator: Note - pulseCount is handled by SignalEngine (via START command)");
     }
     if (params.burstCount > 0) {
         Serial.println("PulseGenerator: Warning - burst mode not yet implemented");

@@ -33,10 +33,13 @@ SignalEngine::SignalEngine() :
     _lastAppliedFrequencyHz(DEFAULT_FREQUENCY_HZ),
     _lastAppliedDutyCycle(DEFAULT_DUTY_CYCLE),
     _lastAppliedDurationSec(0.0f),
+    _lastAppliedPulseCount(0),
     _startTimeMicros(0),
     _accumulatedTicks(0),
     _requestedDurationSec(0),
+    _requestedPulseCount(0),
     _durationStartTimeMicros(0),
+    _usePulseCount(false),
     _outputPin(DEFAULT_OUTPUT_PIN)
 {
     // Constructor body (if needed)
@@ -146,8 +149,29 @@ void SignalEngine::begin() {
 
 void SignalEngine::loop() {
     // This loop is called from the main application loop.
-    // Check for timed stop if duration is set
-    if (_isRunning && _requestedDurationSec > 0 && _durationStartTimeMicros > 0) {
+
+    if (!_isRunning) {
+        return; // Nothing to check if not running
+    }
+
+    // Check for pulse count limit (if using pulse count mode)
+    if (_usePulseCount && _requestedPulseCount > 0) {
+        uint64_t currentPulses = getEstimatedCycleCount();
+
+        if (currentPulses >= _requestedPulseCount) {
+            Serial.printf("SignalEngine: Pulse count (%llu) reached. Auto-stopping.\n", _requestedPulseCount);
+            // Reset pulse count tracking BEFORE sending stop command
+            _requestedPulseCount = 0;
+            _usePulseCount = false;
+            // Send stop command to self
+            SignalCmd stopCmd = { .type = SIG_CMD_STOP };
+            sendCommand(stopCmd);
+            return; // Exit to avoid checking duration as well
+        }
+    }
+
+    // Check for timed stop if duration is set (only if not using pulse count)
+    if (!_usePulseCount && _requestedDurationSec > 0 && _durationStartTimeMicros > 0) {
         uint64_t nowMicros = esp_timer_get_time();
         uint64_t targetDurationMicros = (uint64_t)(_requestedDurationSec * 1000000.0);
         uint64_t elapsedMicros = nowMicros - _durationStartTimeMicros;
@@ -159,7 +183,7 @@ void SignalEngine::loop() {
             _durationStartTimeMicros = 0;
             // Send stop command to self
             SignalCmd stopCmd = { .type = SIG_CMD_STOP };
-            sendCommand(stopCmd); // Use the public sendCommand method
+            sendCommand(stopCmd);
         }
     }
     // Other non-blocking checks can go here later.
@@ -284,10 +308,18 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     engine->_lastAppliedFrequencyHz = receivedCmd.frequencyHz;
                     engine->_lastAppliedDutyCycle = receivedCmd.dutyCycle;
                     engine->_lastAppliedDurationSec = receivedCmd.durationSec;
-                    Serial.printf(" - Stored Last Applied: F=%.2f Hz, D=%.2f%%, Dur=%.2f s\n", 
-                                  engine->_lastAppliedFrequencyHz, 
-                                  engine->_lastAppliedDutyCycle * 100.0, 
-                                  engine->_lastAppliedDurationSec);
+                    engine->_lastAppliedPulseCount = receivedCmd.pulseCount;
+
+                    Serial.printf(" - Stored Last Applied: F=%.2f Hz, D=%.2f%%",
+                                  engine->_lastAppliedFrequencyHz,
+                                  engine->_lastAppliedDutyCycle * 100.0);
+
+                    // Determine if using pulse count or duration
+                    if (receivedCmd.paramMode & PARAM_USE_PULSE_COUNT) {
+                        Serial.printf(", Pulses=%llu\n", engine->_lastAppliedPulseCount);
+                    } else {
+                        Serial.printf(", Dur=%.2f s\n", engine->_lastAppliedDurationSec);
+                    }
 
                     // --- Save Settings to NVS --- 
                     preferences.begin(NVS_NAMESPACE, false);
@@ -310,15 +342,33 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         engine->_startTimeMicros = esp_timer_get_time();
                     }
                     
-                    // Handle Duration for START
-                    if (receivedCmd.durationSec > 0) {
-                        engine->_requestedDurationSec = receivedCmd.durationSec;
-                        engine->_durationStartTimeMicros = engine->_startTimeMicros; // Use the same start time
-                         Serial.printf(" - Duration set: %.2f s\n", engine->_requestedDurationSec);
+                    // Handle Duration or Pulse Count for START
+                    if (receivedCmd.paramMode & PARAM_USE_PULSE_COUNT) {
+                        // Use pulse count mode
+                        if (receivedCmd.pulseCount > 0) {
+                            engine->_requestedPulseCount = receivedCmd.pulseCount;
+                            engine->_usePulseCount = true;
+                            engine->_requestedDurationSec = 0; // Clear duration when using pulse count
+                            engine->_durationStartTimeMicros = 0;
+                            Serial.printf(" - Pulse count set: %llu pulses\n", engine->_requestedPulseCount);
+                        } else {
+                            engine->_requestedPulseCount = 0; // Infinite pulses
+                            engine->_usePulseCount = true;
+                            Serial.println(" - Pulse count: Infinite");
+                        }
                     } else {
-                        engine->_requestedDurationSec = 0; // Infinite duration
-                        engine->_durationStartTimeMicros = 0;
-                         Serial.println(" - Duration: Infinite");
+                        // Use duration mode (default, backward compatible)
+                        engine->_usePulseCount = false;
+                        engine->_requestedPulseCount = 0; // Clear pulse count when using duration
+                        if (receivedCmd.durationSec > 0) {
+                            engine->_requestedDurationSec = receivedCmd.durationSec;
+                            engine->_durationStartTimeMicros = engine->_startTimeMicros; // Use the same start time
+                            Serial.printf(" - Duration set: %.2f s\n", engine->_requestedDurationSec);
+                        } else {
+                            engine->_requestedDurationSec = 0; // Infinite duration
+                            engine->_durationStartTimeMicros = 0;
+                            Serial.println(" - Duration: Infinite");
+                        }
                     }
 
                     // Apply settings to pulse generator
@@ -353,7 +403,9 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     engine->_isRunning = false;
                     engine->_startTimeMicros = 0; // Reset start time on stop
                     engine->_requestedDurationSec = 0; // Cancel any duration timer
+                    engine->_requestedPulseCount = 0; // Cancel any pulse count limit
                     engine->_durationStartTimeMicros = 0;
+                    engine->_usePulseCount = false; // Reset mode flag
                     engine->_accumulatedTicks = 0; // Reset accumulator AFTER getting final value
                     
                     stateChanged = true;

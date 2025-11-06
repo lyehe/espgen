@@ -52,14 +52,17 @@ private:
     uint64_t _startTimeMicros; // Timestamp (us) when current segment started
     uint64_t _accumulatedTicks; // Ticks accumulated before the current segment
 
-    // Duration Tracking
+    // Duration/Count Tracking (use one or the other)
     float _requestedDurationSec;    // Requested duration for current run (0 = infinite)
+    uint64_t _requestedPulseCount;  // Requested pulse count (0 = infinite, overrides duration)
     uint64_t _durationStartTimeMicros; // Start time for duration measurement (us)
+    bool _usePulseCount;            // True if using pulse count, false if using duration
 
     // State for last applied parameters (used by button)
     double _lastAppliedFrequencyHz;
     float _lastAppliedDutyCycle;
     float _lastAppliedDurationSec;
+    uint64_t _lastAppliedPulseCount;
 
     // Legacy: Keep track of primary output pin for compatibility
     int _outputPin;
