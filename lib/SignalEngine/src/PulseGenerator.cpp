@@ -9,6 +9,7 @@
 
 PulseGenerator::PulseGenerator() :
     _frequency(DEFAULT_FREQUENCY_HZ),
+    _period_us(freqToPeriodUs(DEFAULT_FREQUENCY_HZ)),
     _is_running(false),
     _mcpwm_unit(MCPWM_UNIT_0)
 {
@@ -19,6 +20,9 @@ PulseGenerator::PulseGenerator() :
         _channels[i].enabled = (i == MASTER_CHANNEL);  // Master is always enabled
         _channels[i].skip_count = 0;
         _duty_cycles[i] = DEFAULT_DUTY_CYCLE;
+        _pulse_widths_us[i] = dutyToPulseWidthUs(DEFAULT_DUTY_CYCLE, _period_us);
+        _phase_delays_us[i] = 0;
+        _polarities[i] = POLARITY_ACTIVE_HIGH;
     }
 
     // Map MCPWM I/O signals for 6 channels
@@ -120,10 +124,11 @@ bool PulseGenerator::setFrequency(double frequency_hz) {
     }
 
     _frequency = frequency_hz;
-    Serial.printf("PulseGenerator: Setting frequency to %.2f Hz\n", frequency_hz);
+    _period_us = freqToPeriodUs(frequency_hz);  // Update period
+    Serial.printf("PulseGenerator: Setting frequency to %.2f Hz (Period: %u us)\n", frequency_hz, _period_us);
 
     // Calculate period in microseconds for MCPWM
-    uint32_t period_us = (uint32_t)(1000000.0 / frequency_hz);
+    uint32_t period_us = _period_us;
 
     // Update all timers with the new frequency
     mcpwm_config_t pwm_config = {
@@ -159,6 +164,7 @@ bool PulseGenerator::setDutyCycle(uint8_t channel_id, float duty_cycle) {
     if (duty_cycle > 1.0) duty_cycle = 1.0;
 
     _duty_cycles[channel_id] = duty_cycle;
+    _pulse_widths_us[channel_id] = dutyToPulseWidthUs(duty_cycle, _period_us);  // Keep pulse width in sync
 
     if (!_channels[channel_id].enabled) {
         return true; // Don't apply if channel is disabled
@@ -404,4 +410,158 @@ mcpwm_generator_t PulseGenerator::_getGenerator(uint8_t channel_id) {
 mcpwm_io_signals_t PulseGenerator::_getIOSignal(uint8_t channel_id) {
     if (channel_id >= MAX_PULSE_CHANNELS) return MCPWM0A;
     return _io_signals[channel_id];
+}
+
+// ===== EXACT PARAMETER METHOD IMPLEMENTATIONS =====
+
+bool PulseGenerator::setPeriod(uint32_t period_us) {
+    if (period_us < 25 || period_us > 1000000000) {
+        Serial.printf("PulseGenerator: Invalid period %u us (must be 25-1000000000)\n", period_us);
+        return false;
+    }
+
+    _period_us = period_us;
+    _frequency = periodToFreqHz(period_us);
+
+    Serial.printf("PulseGenerator: Setting period to %u us (Frequency: %.2f Hz)\n", period_us, _frequency);
+
+    // Use setFrequency to apply the change (it will update _period_us again, but that's ok)
+    return setFrequency(_frequency);
+}
+
+bool PulseGenerator::setPulseWidth(uint8_t channel_id, uint32_t pulse_width_us) {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: Invalid channel ID %d\n", channel_id);
+        return false;
+    }
+
+    if (pulse_width_us > _period_us) {
+        Serial.printf("PulseGenerator: Pulse width %u us exceeds period %u us\n", pulse_width_us, _period_us);
+        return false;
+    }
+
+    _pulse_widths_us[channel_id] = pulse_width_us;
+    _duty_cycles[channel_id] = pulseWidthToDuty(pulse_width_us, _period_us);
+
+    Serial.printf("PulseGenerator: Channel %d pulse width set to %u us (Duty: %.2f%%)\n",
+                  channel_id, pulse_width_us, _duty_cycles[channel_id] * 100.0);
+
+    // Apply the duty cycle to hardware
+    return setDutyCycle(channel_id, _duty_cycles[channel_id]);
+}
+
+bool PulseGenerator::setAllPulseWidths(uint32_t pulse_width_us) {
+    bool success = true;
+    for (uint8_t i = 0; i < MAX_PULSE_CHANNELS; i++) {
+        if (_channels[i].enabled) {
+            success &= setPulseWidth(i, pulse_width_us);
+        }
+    }
+    return success;
+}
+
+bool PulseGenerator::setParams(uint8_t channel_id, const PulseParams_t& params) {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: Invalid channel ID %d\n", channel_id);
+        return false;
+    }
+
+    Serial.printf("PulseGenerator: Setting comprehensive parameters for channel %d\n", channel_id);
+
+    // Apply frequency/period
+    if (params.paramMode & PARAM_USE_PERIOD) {
+        setPeriod(params.periodUs);
+    } else if (params.paramMode & PARAM_USE_FREQUENCY) {
+        setFrequency(params.frequencyHz);
+    }
+
+    // Apply duty/pulse width
+    if (params.paramMode & PARAM_USE_PULSE_WIDTH) {
+        setPulseWidth(channel_id, params.pulseWidthUs);
+    } else if (params.paramMode & PARAM_USE_DUTY_CYCLE) {
+        setDutyCycle(channel_id, params.dutyCycle);
+    }
+
+    // Apply phase offset/delay
+    if (params.paramMode & PARAM_USE_PHASE_TIME) {
+        setPhaseDelay(channel_id, params.phaseDelayUs);
+    } else if (params.paramMode & PARAM_USE_PHASE_DEGREES) {
+        _applyPhaseOffset(channel_id, params.phaseOffsetDeg);
+    }
+
+    // Apply polarity
+    setPolarity(channel_id, params.polarity);
+
+    // Note: Start delay, pulse count, and burst mode not yet implemented
+    if (params.startDelayUs > 0) {
+        Serial.println("PulseGenerator: Warning - startDelayUs not yet implemented");
+    }
+    if (params.pulseCount > 0) {
+        Serial.println("PulseGenerator: Warning - pulseCount not yet implemented (use SignalEngine duration)");
+    }
+    if (params.burstCount > 0) {
+        Serial.println("PulseGenerator: Warning - burst mode not yet implemented");
+    }
+
+    return true;
+}
+
+bool PulseGenerator::setPhaseDelay(uint8_t channel_id, uint32_t delay_us) {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: Invalid channel ID %d\n", channel_id);
+        return false;
+    }
+
+    if (delay_us > _period_us) {
+        Serial.printf("PulseGenerator: Warning - Phase delay %u us exceeds period %u us, wrapping around\n",
+                     delay_us, _period_us);
+        delay_us = delay_us % _period_us;
+    }
+
+    _phase_delays_us[channel_id] = delay_us;
+
+    // Convert to degrees and apply
+    float phase_deg = delayToPhaseDeg(delay_us, _period_us);
+    _channels[channel_id].phase_offset_deg = phase_deg;
+
+    Serial.printf("PulseGenerator: Channel %d phase delay set to %u us (%.1f°)\n",
+                  channel_id, delay_us, phase_deg);
+
+    return _applyPhaseOffset(channel_id, phase_deg);
+}
+
+bool PulseGenerator::setPolarity(uint8_t channel_id, SignalPolarity polarity) {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: Invalid channel ID %d\n", channel_id);
+        return false;
+    }
+
+    _polarities[channel_id] = polarity;
+
+    Serial.printf("PulseGenerator: Channel %d polarity set to %s\n",
+                  channel_id, polarity == POLARITY_ACTIVE_HIGH ? "ACTIVE_HIGH" : "ACTIVE_LOW");
+
+    // TODO: Actually implement polarity in MCPWM configuration
+    // This would require changing the MCPWM generator actions
+    Serial.println("PulseGenerator: Warning - Polarity control not yet fully implemented in MCPWM");
+
+    return true;
+}
+
+uint32_t PulseGenerator::getPeriodUs() const {
+    return _period_us;
+}
+
+uint32_t PulseGenerator::getPulseWidthUs(uint8_t channel_id) const {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        return 0;
+    }
+    return _pulse_widths_us[channel_id];
+}
+
+uint32_t PulseGenerator::getPhaseDelayUs(uint8_t channel_id) const {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        return 0;
+    }
+    return _phase_delays_us[channel_id];
 }

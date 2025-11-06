@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "driver/mcpwm.h"
 #include "driver/gpio.h"
+#include "signal_iface.h"  // For PulseParams_t and helper functions
 
 /**
  * @brief Multi-channel pulse generator using ESP32 MCPWM peripheral
@@ -96,6 +97,75 @@ public:
      */
     bool setAllDutyCycles(float duty_cycle);
 
+    // ===== EXACT PARAMETER METHODS =====
+
+    /**
+     * @brief Set exact period for all channels (alternative to setFrequency)
+     * @param period_us Period in microseconds (25 to 1000000000)
+     * @return true on success, false on failure
+     */
+    bool setPeriod(uint32_t period_us);
+
+    /**
+     * @brief Set exact pulse width for a specific channel
+     * @param channel_id Channel number (0-5)
+     * @param pulse_width_us Pulse width in microseconds
+     * @return true on success, false on failure
+     * @note Pulse width must be less than period
+     */
+    bool setPulseWidth(uint8_t channel_id, uint32_t pulse_width_us);
+
+    /**
+     * @brief Set pulse width for all enabled channels
+     * @param pulse_width_us Pulse width in microseconds
+     * @return true on success, false on failure
+     */
+    bool setAllPulseWidths(uint32_t pulse_width_us);
+
+    /**
+     * @brief Set comprehensive pulse parameters using PulseParams_t structure
+     * @param channel_id Channel number (0-5)
+     * @param params Comprehensive parameters structure
+     * @return true on success, false on failure
+     */
+    bool setParams(uint8_t channel_id, const PulseParams_t& params);
+
+    /**
+     * @brief Set phase delay in microseconds (alternative to phase in degrees)
+     * @param channel_id Channel number (0-5)
+     * @param delay_us Phase delay in microseconds
+     * @return true on success, false on failure
+     */
+    bool setPhaseDelay(uint8_t channel_id, uint32_t delay_us);
+
+    /**
+     * @brief Set signal polarity for a channel
+     * @param channel_id Channel number (0-5)
+     * @param polarity POLARITY_ACTIVE_HIGH or POLARITY_ACTIVE_LOW
+     * @return true on success, false on failure
+     */
+    bool setPolarity(uint8_t channel_id, SignalPolarity polarity);
+
+    /**
+     * @brief Get current period in microseconds
+     * @return Period in microseconds
+     */
+    uint32_t getPeriodUs() const;
+
+    /**
+     * @brief Get current pulse width for a channel
+     * @param channel_id Channel number (0-5)
+     * @return Pulse width in microseconds
+     */
+    uint32_t getPulseWidthUs(uint8_t channel_id) const;
+
+    /**
+     * @brief Get phase delay in microseconds for a channel
+     * @param channel_id Channel number (0-5)
+     * @return Phase delay in microseconds
+     */
+    uint32_t getPhaseDelayUs(uint8_t channel_id) const;
+
     /**
      * @brief Start pulse generation on all enabled channels (synchronized)
      * @return true on success, false on failure
@@ -170,9 +240,13 @@ public:
 private:
     // Internal state
     double _frequency;
+    uint32_t _period_us;         // Period in microseconds
     bool _is_running;
     PulseChannelConfig_t _channels[MAX_PULSE_CHANNELS];
     float _duty_cycles[MAX_PULSE_CHANNELS];
+    uint32_t _pulse_widths_us[MAX_PULSE_CHANNELS];  // Exact pulse widths
+    uint32_t _phase_delays_us[MAX_PULSE_CHANNELS];  // Phase delays in microseconds
+    SignalPolarity _polarities[MAX_PULSE_CHANNELS]; // Channel polarities
 
     // MCPWM mapping
     mcpwm_unit_t _mcpwm_unit;
