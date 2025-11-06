@@ -176,17 +176,17 @@ static inline bool validateSignalCmd(const SignalCmd* cmd) {
         return false;
     }
 
-    // Validate ranges for frequency
+    // Validate ranges for frequency (ESP32 MCPWM max ~8MHz)
     if (cmd->paramMode & PARAM_USE_FREQUENCY) {
-        if (cmd->frequencyHz <= 0 || cmd->frequencyHz > 40000000) {
-            return false; // Invalid frequency range (must be positive, max 40MHz)
+        if (cmd->frequencyHz <= 0 || cmd->frequencyHz > 8000000) {
+            return false; // Invalid frequency range (must be positive, max 8MHz for ESP32 MCPWM)
         }
     }
 
-    // Validate ranges for period
+    // Validate ranges for period (125ns min = 8MHz max, 1000s max)
     if (cmd->paramMode & PARAM_USE_PERIOD) {
-        if (cmd->periodUs < 25 || cmd->periodUs > 1000000000) {
-            return false; // Invalid period range (25ns to 1000s)
+        if (cmd->periodUs < 1 || cmd->periodUs > 1000000000) {
+            return false; // Invalid period range (1us to 1000s)
         }
     }
 

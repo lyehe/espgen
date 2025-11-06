@@ -118,8 +118,9 @@ bool PulseGenerator::configureSlave(uint8_t slave_id, uint8_t gpio_pin, float ph
 }
 
 bool PulseGenerator::setFrequency(double frequency_hz) {
-    if (frequency_hz <= 0 || frequency_hz > 40000000) {
-        Serial.printf("PulseGenerator: Invalid frequency %.2f Hz\n", frequency_hz);
+    // ESP32 MCPWM timer resolution limits: ~8MHz maximum practical frequency
+    if (frequency_hz <= 0 || frequency_hz > 8000000) {
+        Serial.printf("PulseGenerator: Invalid frequency %.2f Hz (max 8MHz for ESP32 MCPWM)\n", frequency_hz);
         return false;
     }
 
@@ -382,14 +383,25 @@ bool PulseGenerator::_applyPhaseOffset(uint8_t channel_id, float phase_deg) {
 
     mcpwm_timer_t timer = _timers[channel_id];
 
-    // Calculate phase as percentage of period
-    uint32_t phase_val = (uint32_t)(phase_deg / 360.0 * 1000); // MCPWM phase in 0-1000 range
+    // Calculate phase as percentage of period (0-999 range per ESP-IDF spec)
+    uint32_t phase_val = (uint32_t)(phase_deg / 360.0 * 999);
 
-    // Set phase for this timer
-    mcpwm_set_phase(_mcpwm_unit, timer, MCPWM_SELECT_SYNC_INT0, phase_val);
+    // Store the phase delay for later retrieval
+    _phase_delays_us[channel_id] = phaseToDelayUs(phase_deg, _period_us);
+    _channels[channel_id].phase_offset_deg = phase_deg;
 
-    Serial.printf("PulseGenerator: Channel %d phase offset set to %.1f° (val: %u)\n",
-                 channel_id, phase_deg, phase_val);
+    // Set phase using mcpwm_sync_enable with phase parameter
+    // Note: This sets the sync phase, not a persistent phase offset
+    esp_err_t err = mcpwm_sync_enable(_mcpwm_unit, timer, MCPWM_SELECT_SYNC_INT0, phase_val);
+
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to set phase for channel %d: %s\n",
+                     channel_id, esp_err_to_name(err));
+        return false;
+    }
+
+    Serial.printf("PulseGenerator: Channel %d phase offset set to %.1f° (val: %u, delay: %u us)\n",
+                 channel_id, phase_deg, phase_val, _phase_delays_us[channel_id]);
     return true;
 }
 

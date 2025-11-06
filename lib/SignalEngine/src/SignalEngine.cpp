@@ -460,8 +460,22 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
                  case SIG_CMD_UPDATE_FREQ:
                      Serial.printf("CmdDispatcherTask: Processing UPDATE_FREQ to %.2f Hz\n", receivedCmd.frequencyHz);
+
+                     // CRITICAL: Accumulate ticks with OLD frequency before changing
+                     if (engine->_isRunning && engine->_startTimeMicros > 0) {
+                         uint64_t cycles_just_elapsed = calculateCycles(
+                             engine->_startTimeMicros,
+                             esp_timer_get_time(),
+                             engine->_currentFrequencyHz  // Use OLD frequency for OLD time segment
+                         );
+                         engine->_accumulatedTicks += cycles_just_elapsed;
+                         engine->_startTimeMicros = esp_timer_get_time(); // Reset segment start
+                         Serial.printf("  Accumulated %llu cycles before frequency change\n", cycles_just_elapsed);
+                     }
+
                      engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
                      engine->_currentFrequencyHz = receivedCmd.frequencyHz;
+
                      if (engine->_isRunning) { // Only trigger event if running
                          stateChanged = true;
                          eventId = SIG_EVT_PARAMS_CHANGED;
