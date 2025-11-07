@@ -84,7 +84,12 @@ bool PulseGenerator::configureChannel(uint8_t channel_id, const PulseChannelConf
 
     // Configure GPIO pin
     if (config.gpio_pin > 0 && _channels[channel_id].enabled) {
-        mcpwm_gpio_init(_mcpwm_unit, _io_signals[channel_id], config.gpio_pin);
+        esp_err_t err = mcpwm_gpio_init(_mcpwm_unit, _io_signals[channel_id], config.gpio_pin);
+        if (err != ESP_OK) {
+            Serial.printf("PulseGenerator: ERROR - Failed to configure GPIO %d for channel %d: %s\n",
+                         config.gpio_pin, channel_id, esp_err_to_name(err));
+            return false;
+        }
         Serial.printf("PulseGenerator: GPIO %d configured for channel %d signal\n",
                      config.gpio_pin, channel_id);
     }
@@ -142,7 +147,12 @@ bool PulseGenerator::setFrequency(double frequency_hz) {
 
     // Configure each timer (TIMER_0, TIMER_1, TIMER_2)
     for (int timer_idx = 0; timer_idx < 3; timer_idx++) {
-        mcpwm_init(_mcpwm_unit, (mcpwm_timer_t)timer_idx, &pwm_config);
+        esp_err_t err = mcpwm_init(_mcpwm_unit, (mcpwm_timer_t)timer_idx, &pwm_config);
+        if (err != ESP_OK) {
+            Serial.printf("PulseGenerator: ERROR - Failed to configure timer %d: %s\n",
+                         timer_idx, esp_err_to_name(err));
+            return false;
+        }
     }
 
     // Reapply duty cycles after frequency change
@@ -177,8 +187,19 @@ bool PulseGenerator::setDutyCycle(uint8_t channel_id, float duty_cycle) {
     // Convert duty cycle to percentage for MCPWM API
     float duty_percent = duty_cycle * 100.0;
 
-    mcpwm_set_duty(_mcpwm_unit, timer, gen, duty_percent);
-    mcpwm_set_duty_type(_mcpwm_unit, timer, gen, MCPWM_DUTY_MODE_0);
+    esp_err_t err = mcpwm_set_duty(_mcpwm_unit, timer, gen, duty_percent);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to set duty for channel %d: %s\n",
+                     channel_id, esp_err_to_name(err));
+        return false;
+    }
+
+    err = mcpwm_set_duty_type(_mcpwm_unit, timer, gen, MCPWM_DUTY_MODE_0);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to set duty type for channel %d: %s\n",
+                     channel_id, esp_err_to_name(err));
+        return false;
+    }
 
     Serial.printf("PulseGenerator: Channel %d duty set to %.2f%%\n", channel_id, duty_percent);
     return true;

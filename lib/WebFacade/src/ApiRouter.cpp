@@ -198,9 +198,8 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
     float duty = obj["duty_cycle"] | 0.5f;
     float duration = obj["duration_sec"] | 0.0f; // Parse duration_sec, default 0
 
-    SignalCmd cmd;
+    SignalCmd cmd = {0}; // Zero-initialize entire structure
     bool commandValid = true;
-    cmd.durationSec = 0; // Ensure duration is 0 for non-start commands by default
 
     // Use correct enum type and values
     if (strcmp(commandStr, "start") == 0) {
@@ -208,19 +207,25 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
         cmd.frequencyHz = freq;
         cmd.dutyCycle = duty;
         cmd.durationSec = duration; // Set duration for start command
+        cmd.polarity = POLARITY_ACTIVE_HIGH;
+        // Set paramMode flags to indicate which union fields are active
+        cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE | PARAM_USE_DURATION;
         Serial.printf("API: Parsed START (Freq: %lu, Duty: %.2f, Duration: %.2f s)\n", freq, duty, duration);
     } else if (strcmp(commandStr, "stop") == 0) {
         cmd.type = SIG_CMD_STOP;
-         Serial.printf("API: Parsed STOP\n");
+        cmd.paramMode = 0; // STOP doesn't need parameters
+        Serial.printf("API: Parsed STOP\n");
     } else if (strcmp(commandStr, "update") == 0) {
         // Assuming "update" corresponds to UPDATE_ALL
         cmd.type = SIG_CMD_UPDATE_ALL;
         cmd.frequencyHz = freq;
         cmd.dutyCycle = duty;
-         Serial.printf("API: Parsed UPDATE (Freq: %lu, Duty: %.2f)\n", freq, duty);
+        // Set paramMode flags for UPDATE_ALL
+        cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE;
+        Serial.printf("API: Parsed UPDATE (Freq: %lu, Duty: %.2f)\n", freq, duty);
     } else {
         commandValid = false;
-         Serial.printf("API: Invalid command '%s'\n", commandStr);
+        Serial.printf("API: Invalid command '%s'\n", commandStr);
         request->send(400, "application/json", "{\"error\":\"Invalid command value\"}");
     }
 

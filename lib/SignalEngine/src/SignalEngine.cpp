@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "build_opts.h"
 #include "signal_iface.h"
+#include "param_helpers.h"
 #include "esp_event.h"
 #include "esp_timer.h"
 #include <Preferences.h>
@@ -298,6 +299,13 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
     for (;;) {
         if (xQueueReceive(engine->xQueueCmd, &receivedCmd, portMAX_DELAY) == pdPASS) {
             Serial.printf("CmdDispatcherTask: Received command type %d\n", receivedCmd.type);
+
+            // VALIDATION: Check command validity before processing
+            if (!validateSignalCmd(&receivedCmd)) {
+                Serial.println("CmdDispatcherTask: ERROR - Invalid command parameters, ignoring");
+                continue; // Skip this command
+            }
+
             bool stateChanged = false;
             SigEvtId eventId = SIG_EVT_PARAMS_CHANGED; // Default event ID
 
@@ -377,17 +385,21 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     
                     // Handle Duration or Pulse Count for START
                     if (receivedCmd.paramMode & PARAM_USE_PULSE_COUNT) {
-                        // Use pulse count mode
+                        // Use pulse count mode - RESET accumulator for new pulse count
+                        // User expects START to begin counting from 0, not continue from accumulated
+                        engine->_accumulatedTicks = 0;
+                        engine->_startTimeMicros = esp_timer_get_time();
+
                         if (receivedCmd.pulseCount > 0) {
                             engine->_requestedPulseCount = receivedCmd.pulseCount;
                             engine->_usePulseCount = true;
                             engine->_requestedDurationSec = 0; // Clear duration when using pulse count
                             engine->_durationStartTimeMicros = 0;
-                            Serial.printf(" - Pulse count set: %llu pulses\n", engine->_requestedPulseCount);
+                            Serial.printf(" - Pulse count set: %llu pulses (accumulator reset)\n", engine->_requestedPulseCount);
                         } else {
                             engine->_requestedPulseCount = 0; // Infinite pulses
                             engine->_usePulseCount = true;
-                            Serial.println(" - Pulse count: Infinite");
+                            Serial.println(" - Pulse count: Infinite (accumulator reset)");
                         }
                     } else {
                         // Use duration mode (default, backward compatible)

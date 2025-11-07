@@ -66,7 +66,7 @@ void SerialCLI::parseAndExecute() {
     _inputBuffer.toLowerCase(); // Convert to lowercase for case-insensitive matching
     Serial.printf("Processing: [%s]\n", _inputBuffer.c_str());
 
-    SignalCmd cmd; // Command to send to the engine
+    SignalCmd cmd = {0}; // Zero-initialize command structure
     bool commandSent = false;
 
     // Simple parsing logic (replace with more robust parser later)
@@ -83,10 +83,12 @@ void SerialCLI::parseAndExecute() {
 
     } else if (_inputBuffer == "start") {
         cmd.type = SIG_CMD_START;
+        cmd.paramMode = 0; // No params specified, will use last applied values
         commandSent = _engine.sendCommand(cmd);
 
     } else if (_inputBuffer == "stop") {
         cmd.type = SIG_CMD_STOP;
+        cmd.paramMode = 0; // STOP doesn't need parameters
         commandSent = _engine.sendCommand(cmd);
 
     } else if (_inputBuffer.startsWith("update ")) {
@@ -98,6 +100,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_UPDATE_ALL;
             cmd.frequencyHz = freq;
             cmd.dutyCycle = duty;
+            cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE;
             commandSent = _engine.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: update <freq_hz> <duty_0.0-1.0>");
@@ -109,6 +112,7 @@ void SerialCLI::parseAndExecute() {
         if (argsParsed == 1) {
             cmd.type = SIG_CMD_UPDATE_FREQ;
             cmd.frequencyHz = freq;
+            cmd.paramMode = PARAM_USE_FREQUENCY;
             commandSent = _engine.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: freq <hz>");
@@ -120,6 +124,7 @@ void SerialCLI::parseAndExecute() {
         if (argsParsed == 1) {
             cmd.type = SIG_CMD_UPDATE_DUTY;
             cmd.dutyCycle = duty;
+            cmd.paramMode = PARAM_USE_DUTY_CYCLE;
             commandSent = _engine.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: duty <0.0-1.0>");
