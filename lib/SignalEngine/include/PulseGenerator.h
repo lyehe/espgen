@@ -237,6 +237,30 @@ public:
      */
     bool isMasterChannel(uint8_t channel_id) const { return channel_id == MASTER_CHANNEL; }
 
+    // ===== STATUS INDICATOR METHODS =====
+
+    /**
+     * @brief Set the status indicator GPIO pin
+     * @param gpio_pin GPIO pin number (0 = disabled)
+     * @return true on success, false on failure
+     *
+     * The indicator pin will be HIGH when signal is running, LOW when stopped.
+     * Useful for LED indicators, enable signals, or monitoring.
+     */
+    bool setIndicatorPin(uint8_t gpio_pin);
+
+    /**
+     * @brief Get the current indicator pin
+     * @return GPIO pin number (0 = disabled)
+     */
+    uint8_t getIndicatorPin() const { return _indicator_pin; }
+
+    /**
+     * @brief Check if indicator is enabled
+     * @return true if indicator pin is configured
+     */
+    bool hasIndicator() const { return _indicator_pin > 0; }
+
 private:
     // Internal state
     double _frequency;
@@ -253,6 +277,9 @@ private:
     mcpwm_io_signals_t _io_signals[MAX_PULSE_CHANNELS];
     mcpwm_timer_t _timers[MAX_PULSE_CHANNELS];
     mcpwm_generator_t _generators[MAX_PULSE_CHANNELS];
+
+    // Status indicator
+    uint8_t _indicator_pin;      // GPIO pin for status indicator (0 = disabled)
 
     // Helper functions
     bool _initMCPWM();

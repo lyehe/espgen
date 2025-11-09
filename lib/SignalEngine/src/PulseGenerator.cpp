@@ -11,7 +11,8 @@ PulseGenerator::PulseGenerator() :
     _frequency(DEFAULT_FREQUENCY_HZ),
     _period_us(freqToPeriodUs(DEFAULT_FREQUENCY_HZ)),
     _is_running(false),
-    _mcpwm_unit(MCPWM_UNIT_0)
+    _mcpwm_unit(MCPWM_UNIT_0),
+    _indicator_pin(0)
 {
     // Initialize channel configurations
     for (int i = 0; i < MAX_PULSE_CHANNELS; i++) {
@@ -237,6 +238,13 @@ bool PulseGenerator::start() {
     }
 
     _is_running = true;
+
+    // Set status indicator HIGH (signal active)
+    if (_indicator_pin > 0) {
+        digitalWrite(_indicator_pin, HIGH);
+        Serial.printf("PulseGenerator: Status indicator ON (GPIO %d)\n", _indicator_pin);
+    }
+
     Serial.println("PulseGenerator: All channels started");
     return true;
 }
@@ -257,6 +265,13 @@ bool PulseGenerator::stop() {
     }
 
     _is_running = false;
+
+    // Set status indicator LOW (signal inactive)
+    if (_indicator_pin > 0) {
+        digitalWrite(_indicator_pin, LOW);
+        Serial.printf("PulseGenerator: Status indicator OFF (GPIO %d)\n", _indicator_pin);
+    }
+
     Serial.println("PulseGenerator: All channels stopped");
     return true;
 }
@@ -598,4 +613,28 @@ uint32_t PulseGenerator::getPhaseDelayUs(uint8_t channel_id) const {
         return 0;
     }
     return _phase_delays_us[channel_id];
+}
+
+// ===== STATUS INDICATOR IMPLEMENTATION =====
+
+bool PulseGenerator::setIndicatorPin(uint8_t gpio_pin) {
+    // Disable old indicator if set
+    if (_indicator_pin > 0) {
+        pinMode(_indicator_pin, INPUT);  // Reset to input
+        digitalWrite(_indicator_pin, LOW);
+    }
+
+    _indicator_pin = gpio_pin;
+
+    // Configure new indicator if not disabled
+    if (_indicator_pin > 0) {
+        pinMode(_indicator_pin, OUTPUT);
+        // Set initial state based on running status
+        digitalWrite(_indicator_pin, _is_running ? HIGH : LOW);
+        Serial.printf("PulseGenerator: Status indicator configured on GPIO %d\n", _indicator_pin);
+    } else {
+        Serial.println("PulseGenerator: Status indicator disabled");
+    }
+
+    return true;
 }

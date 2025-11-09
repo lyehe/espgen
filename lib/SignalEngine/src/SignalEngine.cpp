@@ -577,6 +577,14 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     stateChanged = false; // Prevent default PARAM_CHANGED event
                     break;
 
+                case SIG_CMD_SET_INDICATOR:
+                    Serial.printf("CmdDispatcherTask: Handling SET_INDICATOR command (Pin: %d)\n", receivedCmd.pin);
+                    // Indicator pin can be 0 (disabled) or any valid GPIO
+                    engine->pulseGen.setIndicatorPin(receivedCmd.pin);
+                    Serial.printf("CmdDispatcherTask: Status indicator pin set to %d\n", receivedCmd.pin);
+                    stateChanged = false; // No state change event needed
+                    break;
+
                 case SIG_CMD_CONFIG_CHANNEL:
                     // Note: Typically used for slave channels (1-5). Master channel (0) should use SET_PIN.
                     Serial.printf("CmdDispatcherTask: Configuring channel %d (Pin: %d, Phase: %.1f°, Enabled: %d)\n",

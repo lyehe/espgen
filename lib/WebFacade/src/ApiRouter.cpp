@@ -137,6 +137,48 @@ void ApiRouter::registerRoutes() {
                 // Ideally, accumulate using RequestBodyState like /api/trigger
             }
     });
+
+    // POST /api/setindicator - Set the status indicator pin
+    _server.on("/api/setindicator", HTTP_POST, [this](AsyncWebServerRequest *request){
+        // This is called when headers are received
+        if (!request->_tempObject) {
+            request->_tempObject = new RequestBodyState();
+        }
+    },
+    NULL, // No file upload
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        // Body handler
+        RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+        if (state) {
+            if (index == 0) { // First chunk
+                state->buffer.clear();
+                state->buffer.reserve(total + 1);
+            }
+            state->buffer.insert(state->buffer.end(), data, data + len);
+        }
+
+        if (index + len == total) { // Last chunk
+            Serial.printf("Received POST /api/setindicator, Body Size: %d\n", total);
+            if (state) {
+                state->buffer.push_back(0); // Null-terminate
+
+                JsonDocument jsonDoc;
+                DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                if (error) {
+                    Serial.print("deserializeJson() failed: ");
+                    Serial.println(error.c_str());
+                    request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                } else {
+                    JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                    this->handleSetIndicatorPost(request, jsonVariant);
+                }
+
+                delete state;
+                request->_tempObject = nullptr;
+            }
+        }
+    });
 }
 
 // Handler implementation for GET /api/discovery
@@ -270,4 +312,36 @@ void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVaria
         Serial.printf("API: Invalid pin %d requested. Must be 12-19.\n", pin);
         request->send(400, "application/json", "{\"error\":\"Invalid pin number (must be 12-19)\"}");
     }
-} 
+}
+
+void ApiRouter::handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["pin"].is<int>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'pin' field (must be integer)\"}");
+        return;
+    }
+
+    int pin = obj["pin"];
+    Serial.printf("API: Received request to set indicator pin to %d\n", pin);
+
+    // Indicator pin can be 0 (disabled) or any valid GPIO
+    // Note: We don't restrict to 12-19 since indicator is just a simple GPIO output
+    SignalCmd cmd = {0};
+    cmd.type = SIG_CMD_SET_INDICATOR;
+    cmd.pin = (uint8_t)pin;
+    cmd.paramMode = 0; // No special parameters needed
+
+    if (_engine.sendCommand(cmd)) {
+        if (pin == 0) {
+            request->send(200, "application/json", "{\"status\":\"indicator disabled\"}");
+            Serial.println("API: Indicator disabled.");
+        } else {
+            request->send(200, "application/json", "{\"status\":\"indicator pin update queued\"}");
+            Serial.printf("API: Set indicator pin to %d command sent successfully.\n", pin);
+        }
+    } else {
+        request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+        Serial.println("API: Command queue full for set indicator.");
+    }
+}

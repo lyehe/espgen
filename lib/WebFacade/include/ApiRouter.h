@@ -31,6 +31,9 @@ private:
     // Handler for POST requests to /api/v1/config/output_pin
     void handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVariant &json);
 
+    // Handler for POST requests to /api/setindicator
+    void handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVariant &json);
+
     // Static handler wrapper needed for AsyncWebServer library with JSON body
     static void handleTriggerPostWrapper(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
 };

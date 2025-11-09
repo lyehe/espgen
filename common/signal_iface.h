@@ -17,6 +17,7 @@ typedef enum {
     SIG_CMD_UPDATE_DUTY,     // Update duty cycle only (single or all channels)
     SIG_CMD_UPDATE_ALL,      // Update both frequency and duty cycle
     SIG_CMD_SET_PIN,         // Set the output GPIO pin for a channel
+    SIG_CMD_SET_INDICATOR,   // Set the status indicator GPIO pin
     SIG_CMD_CONFIG_CHANNEL,  // Configure channel (pin, phase offset, enable)
     SIG_CMD_ENABLE_CHANNEL,  // Enable/disable a specific channel
     SIG_CMD_SYNC,            // Trigger synchronization
