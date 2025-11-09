@@ -60,6 +60,12 @@ bool PulseGenerator::begin() {
         return false;
     }
 
+    // Setup timer synchronization (Timer 0 = master, Timers 1&2 = slaves)
+    if (!_setupSync()) {
+        Serial.println("PulseGenerator: WARNING - Failed to setup timer synchronization");
+        // Continue anyway, but channels may not be perfectly synchronized
+    }
+
     Serial.println("PulseGenerator: Initialization complete");
     return true;
 }
@@ -219,23 +225,25 @@ bool PulseGenerator::setAllDutyCycles(float duty_cycle) {
 bool PulseGenerator::start() {
     Serial.println("PulseGenerator: Starting all enabled channels...");
 
-    // Setup synchronization
-    if (!_setupSync()) {
-        Serial.println("PulseGenerator: Failed to setup sync");
-        return false;
-    }
-
-    // Start all timers
-    for (int timer_idx = 0; timer_idx < 3; timer_idx++) {
-        mcpwm_start(_mcpwm_unit, (mcpwm_timer_t)timer_idx);
-    }
-
-    // Apply phase offsets
+    // Apply phase offsets BEFORE starting (so sync config is ready)
     for (int i = 0; i < MAX_PULSE_CHANNELS; i++) {
         if (_channels[i].enabled && _channels[i].phase_offset_deg != 0.0) {
             _applyPhaseOffset(i, _channels[i].phase_offset_deg);
         }
     }
+
+    // Start all timers in sequence (fast as possible for best sync)
+    for (int timer_idx = 0; timer_idx < 3; timer_idx++) {
+        esp_err_t err = mcpwm_start(_mcpwm_unit, (mcpwm_timer_t)timer_idx);
+        if (err != ESP_OK) {
+            Serial.printf("PulseGenerator: ERROR - Failed to start timer %d: %s\n",
+                         timer_idx, esp_err_to_name(err));
+            return false;
+        }
+    }
+
+    // Trigger sync to align all timers
+    triggerSync();
 
     _is_running = true;
 
@@ -245,7 +253,7 @@ bool PulseGenerator::start() {
         Serial.printf("PulseGenerator: Status indicator ON (GPIO %d)\n", _indicator_pin);
     }
 
-    Serial.println("PulseGenerator: All channels started");
+    Serial.println("PulseGenerator: All channels started and synchronized");
     return true;
 }
 
@@ -334,11 +342,37 @@ void PulseGenerator::enableAllSlaves() {
 bool PulseGenerator::triggerSync() {
     Serial.println("PulseGenerator: Triggering software sync...");
 
-    // Sync all timers to realign phases
-    mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_0, MCPWM_SELECT_SYNC_INT0, 0);
-    mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_1, MCPWM_SELECT_SYNC_INT0, 0);
-    mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_2, MCPWM_SELECT_SYNC_INT0, 0);
+    // To trigger a sync event in ESP32 MCPWM, we use the software sync trigger
+    // The SYNC_INT0 signal needs to be pulsed to trigger slave timers
 
+    // Method: Use MCPWM sync configuration to trigger TEZ-based sync
+    // This resets slave timers (1 and 2) to align with master (0)
+
+    // Configure sync signal generation from Timer 0 TEZ (Timer Equal Zero)
+    // This makes Timer 0 send a sync pulse when it reaches zero
+    mcpwm_sync_config_t sync_conf = {
+        .sync_sig = MCPWM_SELECT_SYNC_INT0,
+        .timer_val = 0,
+        .count_direction = MCPWM_TIMER_DIRECTION_UP,
+    };
+
+    // Apply sync configuration to trigger realignment
+    esp_err_t err;
+
+    // Slave timers receive the sync pulse and reset to their configured phase
+    err = mcpwm_sync_configure(_mcpwm_unit, MCPWM_TIMER_1, &sync_conf);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: WARNING - Failed to sync Timer 1: %s\n",
+                     esp_err_to_name(err));
+    }
+
+    err = mcpwm_sync_configure(_mcpwm_unit, MCPWM_TIMER_2, &sync_conf);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: WARNING - Failed to sync Timer 2: %s\n",
+                     esp_err_to_name(err));
+    }
+
+    Serial.println("PulseGenerator: Sync triggered");
     return true;
 }
 
@@ -399,12 +433,34 @@ bool PulseGenerator::_initMCPWM() {
 bool PulseGenerator::_setupSync() {
     Serial.println("PulseGenerator: Setting up timer synchronization...");
 
-    // Use TIMER_0 as sync source for TIMER_1 and TIMER_2
-    // This ensures all timers start at the same time
-    mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_0, MCPWM_SELECT_SYNC_INT0, 0);
-    mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_1, MCPWM_SELECT_SYNC_INT0, 0);
-    mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_2, MCPWM_SELECT_SYNC_INT0, 0);
+    // Timer 0 is the MASTER - disable sync input (free-running)
+    esp_err_t err = mcpwm_sync_disable(_mcpwm_unit, MCPWM_TIMER_0);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to disable sync on Timer 0: %s\n",
+                     esp_err_to_name(err));
+        return false;
+    }
+    Serial.println("PulseGenerator: Timer 0 configured as MASTER (sync disabled)");
 
+    // Timers 1 and 2 are SLAVES - sync to internal sync signal 0
+    // Phase offsets will be applied later via _applyPhaseOffset()
+    err = mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_1, MCPWM_SELECT_SYNC_INT0, 0);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to enable sync on Timer 1: %s\n",
+                     esp_err_to_name(err));
+        return false;
+    }
+    Serial.println("PulseGenerator: Timer 1 configured as SLAVE (sync enabled)");
+
+    err = mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_2, MCPWM_SELECT_SYNC_INT0, 0);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to enable sync on Timer 2: %s\n",
+                     esp_err_to_name(err));
+        return false;
+    }
+    Serial.println("PulseGenerator: Timer 2 configured as SLAVE (sync enabled)");
+
+    Serial.println("PulseGenerator: Timer synchronization setup complete");
     return true;
 }
 
