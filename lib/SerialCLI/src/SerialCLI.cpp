@@ -81,6 +81,7 @@ void SerialCLI::parseAndExecute() {
         Serial.println("Exact Parameters:");
         Serial.println("  period <us>        - Set period in microseconds");
         Serial.println("  pulsewidth <us>    - Set pulse width in microseconds");
+        Serial.println("  duration <sec>     - Set duration in seconds (0=infinite)");
         Serial.println("  pulsecount <n>     - Set exact pulse count (0=infinite)");
         Serial.println("Multi-Channel:");
         Serial.println("  channel <id> <pin> <phase> <en>  - Configure slave channel (1-5)");
@@ -182,6 +183,19 @@ void SerialCLI::parseAndExecute() {
             Serial.printf("Setting pulse width to %lu us\n", width);
         } else {
             Serial.println("Error: Invalid format. Use: pulsewidth <microseconds>");
+        }
+    } else if (_inputBuffer.startsWith("duration ")) {
+        // Example: duration 10.5
+        float duration = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "duration %f", &duration);
+        if (argsParsed == 1) {
+            cmd.type = SIG_CMD_START;
+            cmd.durationSec = duration;
+            cmd.paramMode = PARAM_USE_DURATION;
+            commandSent = _engine.sendCommand(cmd);
+            Serial.printf("Setting duration to %.2f seconds\n", duration);
+        } else {
+            Serial.println("Error: Invalid format. Use: duration <seconds>");
         }
     } else if (_inputBuffer.startsWith("pulsecount ")) {
         // Example: pulsecount 1000

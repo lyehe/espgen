@@ -403,8 +403,8 @@ void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVaria
     int pin = obj["pin"];
     Serial.printf("API: Received request to set output pin to %d\n", pin);
 
-    // Validate the pin number
-    if (pin >= 12 && pin <= 19) {
+    // Validate the pin number (GPIO 0-33 are valid on ESP32)
+    if (pin >= 0 && pin <= 33) {
         SignalCmd cmd;
         cmd.type = SIG_CMD_SET_PIN;
         cmd.pin = (uint8_t)pin;
@@ -417,8 +417,8 @@ void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVaria
             Serial.println("API: Command queue full for Set Output Pin.");
         }
     } else {
-        Serial.printf("API: Invalid pin %d requested. Must be 12-19.\n", pin);
-        request->send(400, "application/json", "{\"error\":\"Invalid pin number (must be 12-19)\"}");
+        Serial.printf("API: Invalid pin %d requested. Must be 0-33.\n", pin);
+        request->send(400, "application/json", "{\"error\":\"Invalid pin number (must be 0-33)\"}");
     }
 }
 
