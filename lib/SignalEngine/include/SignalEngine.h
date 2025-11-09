@@ -71,7 +71,7 @@ private:
     TaskHandle_t xCmdDispatcherHandle; // Handle for the command dispatcher task
 
     // Thread safety
-    SemaphoreHandle_t _stateMutex;     // Mutex for protecting shared state variables
+    mutable SemaphoreHandle_t _stateMutex;     // Mutex for protecting shared state variables (mutable for const getters)
 
     // Task function for processing commands
     static void cmdDispatcherTask(void *pvParameters);

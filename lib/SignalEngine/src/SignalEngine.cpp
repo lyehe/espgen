@@ -201,7 +201,21 @@ void SignalEngine::loop() {
     // Check for timed stop if duration is set (only if not using pulse count)
     if (!_usePulseCount && _requestedDurationSec > 0 && _durationStartTimeMicros > 0) {
         uint64_t nowMicros = esp_timer_get_time();
-        uint64_t targetDurationMicros = (uint64_t)(_requestedDurationSec * 1000000.0);
+
+        // Convert duration to microseconds with overflow protection
+        // Max safe duration: UINT64_MAX / 1000000 = ~18446744073 seconds = ~584 years
+        double durationMicrosDouble = _requestedDurationSec * 1000000.0;
+        uint64_t targetDurationMicros;
+        const double MAX_UINT64_AS_DOUBLE = 18446744073709551615.0;
+
+        if (durationMicrosDouble >= MAX_UINT64_AS_DOUBLE) {
+            targetDurationMicros = UINT64_MAX;
+        } else if (durationMicrosDouble < 0) {
+            targetDurationMicros = 0;
+        } else {
+            targetDurationMicros = (uint64_t)durationMicrosDouble;
+        }
+
         uint64_t elapsedMicros = nowMicros - _durationStartTimeMicros;
 
         if (elapsedMicros >= targetDurationMicros) {
@@ -245,78 +259,199 @@ bool SignalEngine::sendCommand(const SignalCmd& cmd) {
 
 // --- Status Getters Implementation ---
 double SignalEngine::getCurrentFrequencyHz() const {
-    // TODO: Add locking (mutex) if this is accessed from multiple tasks
-    // For now, assuming it's safe enough or accessed infrequently
-    return _currentFrequencyHz;
+    if (_stateMutex == NULL) {
+        return _currentFrequencyHz; // Mutex not initialized, return best effort
+    }
+
+    double result = 0.0;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _currentFrequencyHz;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        // Timeout - return best effort value
+        result = _currentFrequencyHz;
+    }
+    return result;
 }
 
 float SignalEngine::getCurrentDutyCycle() const {
-    // TODO: Add locking (mutex)
-    return _currentDutyCycle;
+    if (_stateMutex == NULL) {
+        return _currentDutyCycle; // Mutex not initialized, return best effort
+    }
+
+    float result = 0.0f;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _currentDutyCycle;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        // Timeout - return best effort value
+        result = _currentDutyCycle;
+    }
+    return result;
 }
 
 bool SignalEngine::isRunning() const {
-    // TODO: Add locking (mutex)
-    return _isRunning;
+    if (_stateMutex == NULL) {
+        return _isRunning; // Mutex not initialized, return best effort
+    }
+
+    bool result = false;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _isRunning;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        // Timeout - return best effort value
+        result = _isRunning;
+    }
+    return result;
 }
 
 SignalError SignalEngine::getCurrentStatus(SignalStatus_t& status) {
-    // TODO: Add locking (mutex) if state variables can be modified concurrently
-    // For now, assumes single-threaded access or that reads are atomic enough
-    status.channel = DEFAULT_LEDC_CHANNEL; // Hardcoded for now, assuming channel 0
-    status.frequency = _currentFrequencyHz; 
-    status.dutyCycle = _currentDutyCycle;
-    status.isRunning = _isRunning;
-    status.lastAppliedDurationSec = _lastAppliedDurationSec; // Populate the new field
-    
-    return SIG_OK; // Use the defined success code
+    if (_stateMutex == NULL) {
+        // Mutex not initialized, return best effort
+        status.channel = DEFAULT_LEDC_CHANNEL;
+        status.frequency = _currentFrequencyHz;
+        status.dutyCycle = _currentDutyCycle;
+        status.isRunning = _isRunning;
+        status.lastAppliedDurationSec = _lastAppliedDurationSec;
+        return SIG_OK;
+    }
+
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        status.channel = DEFAULT_LEDC_CHANNEL;
+        status.frequency = _currentFrequencyHz;
+        status.dutyCycle = _currentDutyCycle;
+        status.isRunning = _isRunning;
+        status.lastAppliedDurationSec = _lastAppliedDurationSec;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        // Timeout - return best effort values
+        status.channel = DEFAULT_LEDC_CHANNEL;
+        status.frequency = _currentFrequencyHz;
+        status.dutyCycle = _currentDutyCycle;
+        status.isRunning = _isRunning;
+        status.lastAppliedDurationSec = _lastAppliedDurationSec;
+    }
+
+    return SIG_OK;
 }
 
 // Helper function to calculate cycles based on time and frequency
 static uint64_t calculateCycles(uint64_t startMicros, uint64_t endMicros, double frequencyHz) {
-    if (endMicros > startMicros && frequencyHz > 0) {
-        uint64_t elapsedTimeMicros = endMicros - startMicros;
-        double elapsedSeconds = elapsedTimeMicros / 1000000.0;
-        double cycles = elapsedSeconds * frequencyHz;
-        return (uint64_t)cycles;
+    if (endMicros <= startMicros || frequencyHz <= 0) {
+        return 0;
     }
-    return 0;
+
+    uint64_t elapsedTimeMicros = endMicros - startMicros;
+    double elapsedSeconds = (double)elapsedTimeMicros / 1000000.0;
+    double cycles = elapsedSeconds * frequencyHz;
+
+    // Check for overflow: UINT64_MAX = 18446744073709551615
+    // If cycles would overflow, clamp to UINT64_MAX
+    const double MAX_UINT64_AS_DOUBLE = 18446744073709551615.0;
+    if (cycles >= MAX_UINT64_AS_DOUBLE) {
+        return UINT64_MAX;
+    }
+
+    // Check for negative (shouldn't happen but safety check)
+    if (cycles < 0) {
+        return 0;
+    }
+
+    return (uint64_t)cycles;
 }
 
 uint64_t SignalEngine::getEstimatedCycleCount() const {
-    // TODO: Add locking (mutex) if tasks access this concurrently
-    if (_isRunning && _startTimeMicros > 0) {
-        uint64_t currentCycles = calculateCycles(_startTimeMicros, esp_timer_get_time(), _currentFrequencyHz);
-        return _accumulatedTicks + currentCycles;
-    } else if (!_isRunning) {
-        // If stopped, return the last accumulated count before stop (or 0 if never run)
-        return _accumulatedTicks; 
-    } else {
-        // Running but start time is 0? Should not happen, return accumulator only.
-         return _accumulatedTicks;
+    if (_stateMutex == NULL) {
+        // Mutex not initialized, return best effort
+        if (_isRunning && _startTimeMicros > 0) {
+            uint64_t currentCycles = calculateCycles(_startTimeMicros, esp_timer_get_time(), _currentFrequencyHz);
+            return _accumulatedTicks + currentCycles;
+        }
+        return _accumulatedTicks;
     }
+
+    uint64_t result = 0;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (_isRunning && _startTimeMicros > 0) {
+            uint64_t currentCycles = calculateCycles(_startTimeMicros, esp_timer_get_time(), _currentFrequencyHz);
+            result = _accumulatedTicks + currentCycles;
+        } else {
+            result = _accumulatedTicks;
+        }
+        xSemaphoreGive(_stateMutex);
+    } else {
+        // Timeout - return best effort value
+        if (_isRunning && _startTimeMicros > 0) {
+            uint64_t currentCycles = calculateCycles(_startTimeMicros, esp_timer_get_time(), _currentFrequencyHz);
+            result = _accumulatedTicks + currentCycles;
+        } else {
+            result = _accumulatedTicks;
+        }
+    }
+    return result;
 }
 
 // --- Last Applied Parameter Getters Implementation ---
 double SignalEngine::getLastAppliedFrequencyHz() const {
-    // TODO: Add locking (mutex) if needed
-    return _lastAppliedFrequencyHz;
+    if (_stateMutex == NULL) {
+        return _lastAppliedFrequencyHz;
+    }
+
+    double result = 0.0;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _lastAppliedFrequencyHz;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        result = _lastAppliedFrequencyHz;
+    }
+    return result;
 }
 
 float SignalEngine::getLastAppliedDutyCycle() const {
-    // TODO: Add locking (mutex) if needed
-    return _lastAppliedDutyCycle;
+    if (_stateMutex == NULL) {
+        return _lastAppliedDutyCycle;
+    }
+
+    float result = 0.0f;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _lastAppliedDutyCycle;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        result = _lastAppliedDutyCycle;
+    }
+    return result;
 }
 
 float SignalEngine::getLastAppliedDurationSec() const {
-    // TODO: Add locking (mutex) if needed
-    return _lastAppliedDurationSec;
+    if (_stateMutex == NULL) {
+        return _lastAppliedDurationSec;
+    }
+
+    float result = 0.0f;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _lastAppliedDurationSec;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        result = _lastAppliedDurationSec;
+    }
+    return result;
 }
 
 // --- Getter for Output Pin ---
 int SignalEngine::getOutputPin() const {
-    // TODO: Add locking (mutex) if needed and accessed concurrently
-    return _outputPin;
+    if (_stateMutex == NULL) {
+        return _outputPin;
+    }
+
+    int result = 0;
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        result = _outputPin;
+        xSemaphoreGive(_stateMutex);
+    } else {
+        result = _outputPin;
+    }
+    return result;
 }
 
 // --- Private Static Task Functions ---

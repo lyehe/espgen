@@ -72,7 +72,22 @@ bool PulseGenerator::begin() {
 
 bool PulseGenerator::configureChannel(uint8_t channel_id, const PulseChannelConfig_t& config) {
     if (channel_id >= MAX_PULSE_CHANNELS) {
-        Serial.printf("PulseGenerator: Invalid channel ID %d\n", channel_id);
+        Serial.printf("PulseGenerator: ERROR - Invalid channel ID %d (max %d)\n", channel_id, MAX_PULSE_CHANNELS - 1);
+        return false;
+    }
+
+    // Validate GPIO pin (ESP32 has GPIO 0-39, but not all are usable for MCPWM)
+    // GPIO 34-39 are input-only, so they can't be used for MCPWM output
+    if (config.gpio_pin > 0) {
+        if (config.gpio_pin > 33) {
+            Serial.printf("PulseGenerator: ERROR - GPIO %d is invalid for MCPWM (use GPIO 0-33)\n", config.gpio_pin);
+            return false;
+        }
+    }
+
+    // Validate phase offset (already normalized in _applyPhaseOffset, but check for invalid values)
+    if (!isfinite(config.phase_offset_deg)) {
+        Serial.printf("PulseGenerator: ERROR - Invalid phase offset (NaN or infinity) for channel %d\n", channel_id);
         return false;
     }
 
@@ -95,6 +110,8 @@ bool PulseGenerator::configureChannel(uint8_t channel_id, const PulseChannelConf
         if (err != ESP_OK) {
             Serial.printf("PulseGenerator: ERROR - Failed to configure GPIO %d for channel %d: %s\n",
                          config.gpio_pin, channel_id, esp_err_to_name(err));
+            // Don't mark channel as disabled, just return error
+            // The user may retry with a different pin
             return false;
         }
         Serial.printf("PulseGenerator: GPIO %d configured for channel %d signal\n",
@@ -473,17 +490,33 @@ bool PulseGenerator::_setupSync() {
 
 bool PulseGenerator::_applyPhaseOffset(uint8_t channel_id, float phase_deg) {
     if (channel_id >= MAX_PULSE_CHANNELS) {
+        Serial.printf("PulseGenerator: ERROR - Invalid channel ID %d\n", channel_id);
         return false;
     }
 
-    // Normalize phase to 0-360 degrees
-    while (phase_deg < 0) phase_deg += 360.0;
-    while (phase_deg >= 360.0) phase_deg -= 360.0;
+    // Validate phase input (check for NaN, infinity)
+    if (!isfinite(phase_deg)) {
+        Serial.printf("PulseGenerator: ERROR - Invalid phase value (NaN or infinity) for channel %d\n", channel_id);
+        return false;
+    }
+
+    // Normalize phase to 0-360 degrees using fmod (safer than while loop)
+    phase_deg = fmodf(phase_deg, 360.0f);
+    if (phase_deg < 0) {
+        phase_deg += 360.0f;
+    }
 
     mcpwm_timer_t timer = _timers[channel_id];
 
     // Calculate phase as percentage of period (0-999 range per ESP-IDF spec)
-    uint32_t phase_val = (uint32_t)(phase_deg / 360.0 * 999);
+    float phase_percent = phase_deg / 360.0f;
+    uint32_t phase_val = (uint32_t)(phase_percent * 999.0f);
+
+    // Bounds check for ESP-IDF API (must be 0-999)
+    if (phase_val > 999) {
+        phase_val = 999;
+        Serial.printf("PulseGenerator: WARNING - Phase value clamped to 999 for channel %d\n", channel_id);
+    }
 
     // Store the phase delay for later retrieval
     _phase_delays_us[channel_id] = phaseToDelayUs(phase_deg, _period_us);
@@ -546,10 +579,22 @@ bool PulseGenerator::setPulseWidth(uint8_t channel_id, uint32_t pulse_width_us) 
         return false;
     }
 
-    if (pulse_width_us > _period_us) {
-        Serial.printf("PulseGenerator: Pulse width %u us exceeds period %u us\n", pulse_width_us, _period_us);
+    // Validate period is set
+    if (_period_us == 0) {
+        Serial.printf("PulseGenerator: ERROR - Period not set, cannot set pulse width\n");
         return false;
     }
+
+    // Validate pulse width range
+    // Minimum: 1 us (hardware limitation)
+    // Maximum: period (100% duty cycle)
+    if (pulse_width_us > _period_us) {
+        Serial.printf("PulseGenerator: ERROR - Pulse width %u us exceeds period %u us\n", pulse_width_us, _period_us);
+        return false;
+    }
+
+    // Allow 0 pulse width (0% duty = OFF)
+    // No minimum check needed since 0 is valid
 
     _pulse_widths_us[channel_id] = pulse_width_us;
     _duty_cycles[channel_id] = pulseWidthToDuty(pulse_width_us, _period_us);

@@ -247,10 +247,29 @@ static inline float pulseCountToDuration(uint64_t pulseCount, double freqHz) {
  * @return Phase delay in microseconds
  */
 static inline uint32_t phaseToDelayUs(float phaseDeg, uint32_t periodUs) {
-    // Normalize phase to 0-360
-    while (phaseDeg < 0) phaseDeg += 360.0f;
-    while (phaseDeg >= 360.0f) phaseDeg -= 360.0f;
-    return (uint32_t)((phaseDeg / 360.0f) * periodUs);
+    // Check for invalid inputs (NaN, infinity)
+    if (!isfinite(phaseDeg) || periodUs == 0) {
+        return 0;
+    }
+
+    // Normalize phase to 0-360 using fmod (safer than while loop)
+    phaseDeg = fmodf(phaseDeg, 360.0f);
+    if (phaseDeg < 0) {
+        phaseDeg += 360.0f;
+    }
+
+    // Calculate delay with bounds checking
+    float delayFloat = (phaseDeg / 360.0f) * (float)periodUs;
+
+    // Clamp to valid range to prevent overflow
+    if (delayFloat > (float)periodUs) {
+        return periodUs;
+    }
+    if (delayFloat < 0) {
+        return 0;
+    }
+
+    return (uint32_t)delayFloat;
 }
 
 /**
