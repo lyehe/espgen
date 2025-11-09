@@ -35,11 +35,12 @@ public:
      * @return true if stack is healthy, false if below threshold
      */
     static bool checkStackHealth(size_t threshold = 512) {
-        UBaseType_t highWaterMark = uxTaskGetStackHighWaterMark(NULL);
+        UBaseType_t highWaterMark = uxTaskGetStackHighWaterMark(NULL); // Returns WORDS
+        size_t highWaterMarkBytes = highWaterMark * sizeof(StackType_t); // Convert to bytes
 
-        if (highWaterMark < threshold) {
-            Serial.printf("WARNING: Low stack space: %u bytes remaining (threshold: %zu)\n",
-                         highWaterMark, threshold);
+        if (highWaterMarkBytes < threshold) {
+            Serial.printf("WARNING: Low stack space: %zu bytes remaining (threshold: %zu)\n",
+                         highWaterMarkBytes, threshold);
             return false;
         }
 
@@ -72,8 +73,9 @@ public:
                      freeHeap, minFreeHeap, heapSize);
 
         // Stack information
-        UBaseType_t stackRemaining = uxTaskGetStackHighWaterMark(NULL);
-        Serial.printf("Stack: %u bytes remaining\n", stackRemaining);
+        UBaseType_t stackRemaining = uxTaskGetStackHighWaterMark(NULL); // Returns WORDS
+        size_t stackRemainingBytes = stackRemaining * sizeof(StackType_t); // Convert to bytes
+        Serial.printf("Stack: %zu bytes remaining\n", stackRemainingBytes);
 
         // Task count
         UBaseType_t taskCount = uxTaskGetNumberOfTasks();

@@ -95,25 +95,15 @@ void WebSocketHub::espEventHandler(void* handler_arg, esp_event_base_t event_bas
         return;
     }
 
-    // Isolate handler execution to prevent crashes from propagating
-    try {
-        WebSocketHub* hub = static_cast<WebSocketHub*>(handler_arg);
-        SignalEvtData* data = static_cast<SignalEvtData*>(event_data);
+    // Cast and call handler (null checks already done above)
+    WebSocketHub* hub = static_cast<WebSocketHub*>(handler_arg);
+    SignalEvtData* data = static_cast<SignalEvtData*>(event_data);
 
-        Serial.printf("WebSocketHub: Received event ID %ld from SIGNAL_EVENTS\n", event_id);
+    Serial.printf("WebSocketHub: Received event ID %ld from SIGNAL_EVENTS\n", event_id);
 
-        // Call the broadcast method on the instance, passing event data directly
-        hub->broadcastStatus(event_id, *data);
-
-    } catch (const std::exception& e) {
-        Serial.printf("EXCEPTION in WebSocketHub event handler for event %ld: %s\n",
-                     event_id, e.what());
-        // Don't rethrow - isolate the error
-    } catch (...) {
-        Serial.printf("UNKNOWN EXCEPTION in WebSocketHub event handler for event %ld\n",
-                     event_id);
-        // Don't rethrow - isolate the error
-    }
+    // Call the broadcast method on the instance, passing event data directly
+    // Note: C++ exceptions may be disabled in ESP32 builds, so we rely on null checks above
+    hub->broadcastStatus(event_id, *data);
 }
 
 // Send event data (formatted as JSON) to all connected clients

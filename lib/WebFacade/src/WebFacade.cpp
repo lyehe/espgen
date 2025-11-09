@@ -57,15 +57,15 @@ void WebFacade::handleNotFound(AsyncWebServerRequest *request)
     request->send(404, "text/plain", "Not found");
     }
 
-// Begin WebFacade operation - updated
-void WebFacade::begin()
+// Begin WebFacade operation - returns false on critical failure
+bool WebFacade::begin()
 {
     Serial.println("Initializing WebFacade...");
 
     if (!initLittleFS())
     {
-        Serial.println("Halting WebFacade due to LittleFS failure.");
-        return; // Don't proceed if FS fails
+        Serial.println("CRITICAL: WebFacade initialization FAILED - LittleFS mount failed");
+        return false; // Don't proceed if FS fails
     }
 
     // Start WiFi Manager (handles connection/AP mode)
@@ -149,4 +149,7 @@ void WebFacade::begin()
             Serial.println("Error starting MDNS");
         }
     }
+
+    Serial.println("WebFacade initialization complete");
+    return true; // Successful initialization
 }

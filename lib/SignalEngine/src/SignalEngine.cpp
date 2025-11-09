@@ -233,7 +233,12 @@ void SignalEngine::loop() {
 
     // Check for pulse count limit (if using pulse count mode)
     if (_usePulseCount && _requestedPulseCount > 0) {
-        uint64_t currentPulses = getEstimatedCycleCount();
+        // Calculate current pulses directly (already inside critical section, don't call getEstimatedCycleCount())
+        uint64_t currentCycles = 0;
+        if (_startTimeMicros > 0) {
+            currentCycles = calculateCycles(_startTimeMicros, esp_timer_get_time(), _currentFrequencyHz);
+        }
+        uint64_t currentPulses = _accumulatedTicks + currentCycles;
 
         if (currentPulses >= _requestedPulseCount) {
             Serial.printf("SignalEngine: Pulse count (%llu) reached. Auto-stopping.\n", _requestedPulseCount);
@@ -871,8 +876,8 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
                         // === CRITICAL SECTION START ===
 
-                        // Validate pin number (GPIO 12-19)
-                        if (receivedCmd.pin >= 12 && receivedCmd.pin <= 19) {
+                        // Validate pin number using isValidOutputPin() helper
+                        if (isValidOutputPin(receivedCmd.pin)) {
                             if (receivedCmd.pin != engine->_outputPin) {
                                 Serial.printf("CmdDispatcherTask: Pin changed from %d to %d. Applying.\n", engine->_outputPin, receivedCmd.pin);
 
@@ -893,7 +898,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                             Serial.printf("CmdDispatcherTask: Pin %d is already the current pin. No change needed.\n", receivedCmd.pin);
                         }
                     } else {
-                            Serial.printf("CmdDispatcherTask: Error - Invalid pin %d received. Must be between 12 and 19.\n", receivedCmd.pin);
+                            Serial.printf("CmdDispatcherTask: Error - Invalid pin %d. Valid pins: 2,4,5,12-19,21-23,25-27,32-33.\n", receivedCmd.pin);
                         }
                         // No state change event needed for pin change unless explicitly desired
                         stateChanged = false; // Prevent default PARAM_CHANGED event

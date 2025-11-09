@@ -28,7 +28,7 @@ public:
     // Constructor requires SignalEngine (domain layer)
     // Creates adapter and injects it into presentation layer
     WebFacade(SignalEngine& engine);
-    void begin();
+    bool begin(); // Initialize web facade - returns false on critical failure
 
 private:
     SignalEngine& _engine;              // Domain layer reference

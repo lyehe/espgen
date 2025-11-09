@@ -201,10 +201,10 @@ static inline bool validateSignalCmd(const SignalCmd* cmd) {
     // Note: pulse width vs period check would require knowing the period,
     // which may not be available at validation time
 
-    // Validate phase degrees
+    // Validate phase degrees (range is [0, 360) - 360 is same as 0)
     if (cmd->paramMode & PARAM_USE_PHASE_DEGREES) {
         if (cmd->phaseOffset < 0.0 || cmd->phaseOffset >= 360.0) {
-            return false; // Phase must be 0-360 degrees
+            return false; // Phase must be in range [0, 360) degrees (360 == 0)
         }
     }
 

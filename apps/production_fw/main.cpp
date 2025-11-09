@@ -69,10 +69,21 @@ void handleButtonTap(Button2& btn) {
 
 void setup() {
     Serial.begin(115200);
-    while (!Serial);
-    delay(1000);
-    Serial.println("\n--- ESP32 Trigger Production Firmware ---");
-    Serial.printf("Build: %s %s\n", __DATE__, __TIME__);
+
+    // Wait for serial with timeout (max 2 seconds for production deployment)
+    unsigned long serialStartTime = millis();
+    while (!Serial && (millis() - serialStartTime < 2000)) {
+        delay(10);
+    }
+
+    // Short delay for serial to stabilize
+    delay(100);
+
+    if (Serial) {
+        Serial.println("\n--- ESP32 Trigger Production Firmware ---");
+        Serial.printf("Build: %s %s\n", __DATE__, __TIME__);
+    }
+    // Continue even if Serial not available (headless production mode)
 
     // Initialize ESP-IDF event loop FIRST (required for event posting)
     Serial.println("Initializing event loop...");
@@ -106,8 +117,13 @@ void setup() {
 #endif
 
 #if BUILD_WEB
-    webFacade.begin();
-    Serial.println("Web Interface Enabled.");
+    Serial.println("Initializing Web Interface...");
+    if (!webFacade.begin()) {
+        Serial.println("WARNING: Web interface failed to initialize");
+        Serial.println("System will continue without web interface");
+    } else {
+        Serial.println("Web Interface Enabled.");
+    }
 #endif
 
     Serial.println("Initialization Complete.");
