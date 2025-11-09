@@ -1,0 +1,18 @@
+{
+  "name": "Application",
+  "version": "1.0.0",
+  "description": "Application layer for ESP32 Trigger - Service interfaces and adapters following Clean Architecture",
+  "keywords": ["clean-architecture", "application-services", "adapter-pattern"],
+  "authors": [
+    {
+      "name": "ESP32 Trigger Team"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "SignalEngine"
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

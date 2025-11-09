@@ -4,8 +4,8 @@
 // Include CliHelpTable definitions if needed
 // extern const CommandDef cliCommands[]; 
 
-SerialCLI::SerialCLI(SignalEngine& engine) : 
-    _engine(engine),
+SerialCLI::SerialCLI(ISignalController& controller) : 
+    _controller(engine),
     _inputBuffer(""),
     _commandReady(false)
 {
@@ -97,12 +97,12 @@ void SerialCLI::parseAndExecute() {
     } else if (_inputBuffer == "start") {
         cmd.type = SIG_CMD_START;
         cmd.paramMode = 0; // No params specified, will use last applied values
-        commandSent = _engine.sendCommand(cmd);
+        commandSent = _controller.sendCommand(cmd);
 
     } else if (_inputBuffer == "stop") {
         cmd.type = SIG_CMD_STOP;
         cmd.paramMode = 0; // STOP doesn't need parameters
-        commandSent = _engine.sendCommand(cmd);
+        commandSent = _controller.sendCommand(cmd);
 
     } else if (_inputBuffer.startsWith("update ")) {
         // Example: update 1000 0.5
@@ -114,7 +114,7 @@ void SerialCLI::parseAndExecute() {
             cmd.frequencyHz = freq;
             cmd.dutyCycle = duty;
             cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: update <freq_hz> <duty_0.0-1.0>");
         }
@@ -126,7 +126,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_UPDATE_FREQ;
             cmd.frequencyHz = freq;
             cmd.paramMode = PARAM_USE_FREQUENCY;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: freq <hz>");
         }
@@ -138,7 +138,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_UPDATE_DUTY;
             cmd.dutyCycle = duty;
             cmd.paramMode = PARAM_USE_DUTY_CYCLE;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
         } else {
             Serial.println("Error: Invalid format. Use: duty <0.0-1.0>");
         }
@@ -150,7 +150,7 @@ void SerialCLI::parseAndExecute() {
             if (pin >= 0 && pin <= 33) {
                 cmd.type = SIG_CMD_SET_PIN;
                 cmd.pin = (uint8_t)pin;
-                commandSent = _engine.sendCommand(cmd);
+                commandSent = _controller.sendCommand(cmd);
             } else {
                  Serial.println("Error: Invalid pin. Must be between 0 and 33.");
                  commandSent = false;
@@ -166,7 +166,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_UPDATE_ALL;
             cmd.periodUs = period;
             cmd.paramMode = PARAM_USE_PERIOD;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
             Serial.printf("Setting period to %lu us\n", period);
         } else {
             Serial.println("Error: Invalid format. Use: period <microseconds>");
@@ -179,7 +179,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_UPDATE_ALL;
             cmd.pulseWidthUs = width;
             cmd.paramMode = PARAM_USE_PULSE_WIDTH;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
             Serial.printf("Setting pulse width to %lu us\n", width);
         } else {
             Serial.println("Error: Invalid format. Use: pulsewidth <microseconds>");
@@ -192,7 +192,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_START;
             cmd.durationSec = duration;
             cmd.paramMode = PARAM_USE_DURATION;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
             Serial.printf("Setting duration to %.2f seconds\n", duration);
         } else {
             Serial.println("Error: Invalid format. Use: duration <seconds>");
@@ -205,7 +205,7 @@ void SerialCLI::parseAndExecute() {
             cmd.type = SIG_CMD_START;
             cmd.pulseCount = count;
             cmd.paramMode = PARAM_USE_PULSE_COUNT;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
             Serial.printf("Setting pulse count to %llu\n", count);
         } else {
             Serial.println("Error: Invalid format. Use: pulsecount <count>");
@@ -223,7 +223,7 @@ void SerialCLI::parseAndExecute() {
                 cmd.phaseOffset = (float)phase;
                 cmd.enabled = (enabled != 0);
                 cmd.paramMode = PARAM_USE_PHASE_DEGREES;
-                commandSent = _engine.sendCommand(cmd);
+                commandSent = _controller.sendCommand(cmd);
                 Serial.printf("Configuring channel %d: pin=%d, phase=%d deg, enabled=%s\n",
                              channelId, pin, phase, enabled ? "yes" : "no");
             } else {
@@ -251,7 +251,7 @@ void SerialCLI::parseAndExecute() {
                 validPolarity = false;
             }
             if (validPolarity) {
-                commandSent = _engine.sendCommand(cmd);
+                commandSent = _controller.sendCommand(cmd);
             }
         } else {
             Serial.println("Error: Invalid format. Use: polarity <h|l>");
@@ -263,7 +263,7 @@ void SerialCLI::parseAndExecute() {
         if (argsParsed == 1) {
             cmd.type = SIG_CMD_SET_INDICATOR;
             cmd.pin = (uint8_t)pin;
-            commandSent = _engine.sendCommand(cmd);
+            commandSent = _controller.sendCommand(cmd);
             if (pin == 0) {
                 Serial.println("Indicator disabled");
             } else {
@@ -275,12 +275,12 @@ void SerialCLI::parseAndExecute() {
     } else if (_inputBuffer == "sync") {
         cmd.type = SIG_CMD_SYNC;
         cmd.paramMode = 0;
-        commandSent = _engine.sendCommand(cmd);
+        commandSent = _controller.sendCommand(cmd);
         Serial.println("Triggering multi-channel synchronization");
     } else if (_inputBuffer == "status") {
         // Display current status
         SignalStatus_t status;
-        SignalError err = _engine.getCurrentStatus(status);
+        SignalError err = _controller.getCurrentStatus(status);
         if (err == SIG_OK) {
             Serial.println("=== Current Status ===");
             Serial.printf("  Running: %s\n", status.isRunning ? "YES" : "NO");
@@ -289,7 +289,7 @@ void SerialCLI::parseAndExecute() {
             Serial.printf("  Period: %lu us\n", status.periodUs);
             Serial.printf("  Pulse Width: %lu us\n", status.pulseWidthUs);
             Serial.printf("  Duration: %.2f s\n", status.lastAppliedDurationSec);
-            Serial.printf("  Output Pin: %d\n", _engine.getOutputPin());
+            Serial.printf("  Output Pin: %d\n", _controller.getOutputPin());
             Serial.println("======================");
         } else {
             Serial.println("Error: Failed to retrieve status");

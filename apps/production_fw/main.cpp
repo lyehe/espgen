@@ -1,5 +1,6 @@
 // apps/production_fw/main.cpp
 // Main application integrating all components for the final firmware.
+// This is the Composition Root for the entire application.
 
 #include <Arduino.h>
 #include "build_opts.h"
@@ -10,28 +11,34 @@
 
 #if BUILD_SERIAL_CLI
 #include "SerialCLI.h"
+#include "SignalControllerAdapter.h" // Application layer adapter (Clean Architecture)
 #endif
 
 #if BUILD_WEB
-#include "WebFacade.h"
+#include "WebFacade.h" // WebFacade handles its own adapter internally
 #endif
 
 // Button Configuration
 #define BUTTON_PIN 23
 
-// Instantiate components
+// Instantiate components following Clean Architecture
+// Domain Layer
 SignalEngine signalEngine;
-Button2 button; 
+
+// Infrastructure
+Button2 button;
 
 // Pointer to signal engine for use in button handler
 SignalEngine* signalEnginePtr = nullptr;
 
+// Application Layer (Adapters)
 #if BUILD_SERIAL_CLI
-SerialCLI serialCLI(signalEngine);
+SignalControllerAdapter cliAdapter(signalEngine); // Adapter for CLI
+SerialCLI serialCLI(cliAdapter); // CLI depends on interface, not concrete class
 #endif
 
 #if BUILD_WEB
-WebFacade webFacade(signalEngine);
+WebFacade webFacade(signalEngine); // WebFacade creates its own adapter internally
 #endif
 
 // Button Tap Handler Function

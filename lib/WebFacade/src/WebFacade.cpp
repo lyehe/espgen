@@ -5,16 +5,20 @@
 #include <ESPmDNS.h> // For mDNS
 #include "OTAService.h" // Include OTAService for integration
 
-// Constructor implementation - updated
+// Constructor implementation - Clean Architecture wiring
+// This is the Composition Root where dependency injection happens
 WebFacade::WebFacade(SignalEngine& engine) :
-    _engine(engine),          // Initialize the engine reference
-    _server(80),              // Initialize the server
-    _wifiMgr(),               // Initialize WifiMgr
-    _apiRouter(_engine, _server), // Initialize ApiRouter, passing engine and server
-    _wsHub(_server), // Initialize WebSocketHub, passing the server
-    _otaService() // Initialize OTAService
+    _engine(engine),               // Domain layer reference
+    _adapter(engine),              // Create adapter (Application layer -> Domain layer)
+    _server(80),                   // Initialize the server
+    _wifiMgr(),                    // Initialize WifiMgr
+    _apiRouter(_adapter, _server), // Inject adapter into ApiRouter (Dependency Inversion!)
+    _wsHub(_server),               // Initialize WebSocketHub, passing the server
+    _otaService()                  // Initialize OTAService
 {
     // Constructor body (if needed)
+    // Note: ApiRouter now depends on ISignalController interface, not concrete SignalEngine
+    // This enables testing with mock controllers and follows Clean Architecture
 }
 
 // Initialize LittleFS

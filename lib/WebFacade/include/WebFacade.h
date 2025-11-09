@@ -3,25 +3,41 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-#include "WifiMgr.h"      // Include the WiFi Manager we created in Phase 4
-#include "SignalEngine.h" // Include SignalEngine (needed for ApiRouter)
-#include "ApiRouter.h"    // Include the ApiRouter we just created
-#include "WebSocketHub.h" // Include WebSocketHub
-#include "OTAService.h"   // Include OTAService for OTA updates
+#include "WifiMgr.h"                    // WiFi Manager
+#include "ISignalController.h"          // Application layer interface (Clean Architecture)
+#include "SignalControllerAdapter.h"    // Adapter for existing SignalEngine
+#include "SignalEngine.h"               // Domain layer (for adapter)
+#include "ApiRouter.h"                  // API Router
+#include "WebSocketHub.h"               // WebSocket Hub
+#include "OTAService.h"                 // OTA Service
 
+/**
+ * @brief Web Facade (Composition Root)
+ *
+ * Wires together all components following Clean Architecture principles.
+ * This is where dependency injection happens.
+ *
+ * Architecture:
+ * WebFacade -> SignalControllerAdapter -> SignalEngine
+ *           -> ApiRouter -> ISignalController (interface)
+ *           -> WebSocketHub
+ *           -> OTAService
+ */
 class WebFacade {
 public:
-    // Constructor now requires a SignalEngine reference
+    // Constructor requires SignalEngine (domain layer)
+    // Creates adapter and injects it into presentation layer
     WebFacade(SignalEngine& engine);
-    void begin(); 
+    void begin();
 
 private:
-    SignalEngine& _engine;      // Reference to the signal engine instance
-    AsyncWebServer _server;     // Web server instance
-    WifiMgr _wifiMgr;           // WiFi Manager instance
-    ApiRouter _apiRouter;       // API Router instance
-    WebSocketHub _wsHub;         // Add WebSocketHub instance
-    OTAService _otaService;     // OTA Service instance
+    SignalEngine& _engine;              // Domain layer reference
+    SignalControllerAdapter _adapter;   // Application layer adapter (bridges domain & presentation)
+    AsyncWebServer _server;             // Web server instance
+    WifiMgr _wifiMgr;                   // WiFi Manager instance
+    ApiRouter _apiRouter;               // API Router (depends on ISignalController)
+    WebSocketHub _wsHub;                // WebSocket Hub instance
+    OTAService _otaService;             // OTA Service instance
 
     // --- Request Handlers ---
     void handleRoot(AsyncWebServerRequest *request);

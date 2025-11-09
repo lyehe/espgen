@@ -11,8 +11,8 @@ struct RequestBodyState {
 };
 
 // Constructor
-ApiRouter::ApiRouter(SignalEngine& engine, AsyncWebServer& server) :
-    _engine(engine), _server(server) {}
+ApiRouter::ApiRouter(ISignalController& controller, AsyncWebServer& server) :
+    _controller(engine), _server(server) {}
 
 // Method to register API routes
 void ApiRouter::registerRoutes() {
@@ -247,7 +247,7 @@ void ApiRouter::handleDiscoveryGet(AsyncWebServerRequest *request) {
 // Handler implementation for GET /api/status
 void ApiRouter::handleStatusGet(AsyncWebServerRequest *request) {
     SignalStatus_t currentStatus;
-    SignalError err = _engine.getCurrentStatus(currentStatus);
+    SignalError err = _controller.getCurrentStatus(currentStatus);
 
     if (err != SIG_OK) {
         // Handle potential errors from getCurrentStatus if any are added later
@@ -257,7 +257,7 @@ void ApiRouter::handleStatusGet(AsyncWebServerRequest *request) {
     }
 
     // Get the current output pin
-    int outputPin = _engine.getOutputPin();
+    int outputPin = _controller.getOutputPin();
 
     // Build JSON response using the status struct
     JsonDocument doc; // Using modern JsonDocument
@@ -381,7 +381,7 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
 
     if (commandValid) {
         // Use correct method name
-        if (_engine.sendCommand(cmd)) {
+        if (_controller.sendCommand(cmd)) {
             request->send(200, "application/json", "{\"status\":\"queued\"}");
             Serial.println("API: Command sent successfully.");
         } else {
@@ -409,7 +409,7 @@ void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVaria
         cmd.type = SIG_CMD_SET_PIN;
         cmd.pin = (uint8_t)pin;
 
-        if (_engine.sendCommand(cmd)) {
+        if (_controller.sendCommand(cmd)) {
             request->send(200, "application/json", "{\"status\":\"output pin update queued\"}");
             Serial.println("API: Set Output Pin command sent successfully.");
         } else {
@@ -440,7 +440,7 @@ void ApiRouter::handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVaria
     cmd.pin = (uint8_t)pin;
     cmd.paramMode = 0; // No special parameters needed
 
-    if (_engine.sendCommand(cmd)) {
+    if (_controller.sendCommand(cmd)) {
         if (pin == 0) {
             request->send(200, "application/json", "{\"status\":\"indicator disabled\"}");
             Serial.println("API: Indicator disabled.");
@@ -502,7 +502,7 @@ void ApiRouter::handleChannelPost(AsyncWebServerRequest *request, JsonVariant &j
     Serial.printf("API: Configuring channel %d (pin: %d, enabled: %s)\n",
                  channel, cmd.pin, cmd.enabled ? "true" : "false");
 
-    if (_engine.sendCommand(cmd)) {
+    if (_controller.sendCommand(cmd)) {
         request->send(200, "application/json", "{\"status\":\"channel config queued\"}");
         Serial.println("API: Channel config command sent successfully.");
     } else {
@@ -523,7 +523,7 @@ void ApiRouter::handleChannelsGet(AsyncWebServerRequest *request) {
     JsonObject ch0 = channels.add<JsonObject>();
     ch0["id"] = 0;
     ch0["type"] = "master";
-    ch0["pin"] = _engine.getOutputPin();
+    ch0["pin"] = _controller.getOutputPin();
     ch0["enabled"] = true; // Master is always enabled
     ch0["phase_offset"] = 0; // Master has no phase offset
 
@@ -552,7 +552,7 @@ void ApiRouter::handleSyncPost(AsyncWebServerRequest *request) {
 
     Serial.printf("API: Received sync trigger request\n");
 
-    if (_engine.sendCommand(cmd)) {
+    if (_controller.sendCommand(cmd)) {
         request->send(200, "application/json", "{\"status\":\"sync triggered\"}");
         Serial.println("API: Sync command sent successfully.");
     } else {

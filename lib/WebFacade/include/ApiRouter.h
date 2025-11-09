@@ -4,19 +4,31 @@
 #include <ArduinoJson.h>        // For JSON parsing
 #include <ESPAsyncWebServer.h>  // For web server types
 #include "signal_iface.h"       // For SignalCmd struct
-#include "SignalEngine.h"       // For SignalEngine reference
+#include "ISignalController.h"  // Application layer interface (Clean Architecture)
 
+/**
+ * @brief API Router (Presentation Layer)
+ *
+ * Handles HTTP requests and routes them to application services.
+ * Follows Clean Architecture by depending on interfaces, not concrete implementations.
+ *
+ * Responsibilities:
+ * - Parse HTTP requests
+ * - Validate input (presentation-level validation)
+ * - Call application services
+ * - Format HTTP responses
+ */
 class ApiRouter {
 public:
-    // Constructor takes SignalEngine and the server instance
-    ApiRouter(SignalEngine& engine, AsyncWebServer& server);
+    // Constructor takes application service interface (Dependency Inversion)
+    ApiRouter(ISignalController& controller, AsyncWebServer& server);
 
     // Method to register all API routes with the server
     void registerRoutes();
 
 private:
-    SignalEngine& _engine;      // Reference to the signal engine
-    AsyncWebServer& _server;    // Reference to the web server
+    ISignalController& _controller; // Application service interface (not concrete class!)
+    AsyncWebServer& _server;        // Reference to the web server
 
     // --- Request Handlers ---
     // Handler for POST requests to /api/trigger
