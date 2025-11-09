@@ -46,6 +46,9 @@ public:
     // Channel queries
     virtual int getChannelPin(uint8_t channel) const = 0;
     virtual bool isChannelEnabled(uint8_t channel) const = 0;
+    virtual float getChannelPhaseOffset(uint8_t channel) const = 0;
+    virtual SignalPolarity getChannelPolarity(uint8_t channel) const = 0;
+    virtual bool getChannelConfig(uint8_t channel, PulseChannelConfig_t& config) const = 0;
     virtual bool triggerSync() = 0;
 };
 

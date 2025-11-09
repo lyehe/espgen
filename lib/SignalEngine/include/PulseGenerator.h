@@ -237,6 +237,28 @@ public:
      */
     bool isMasterChannel(uint8_t channel_id) const { return channel_id == MASTER_CHANNEL; }
 
+    /**
+     * @brief Get complete channel configuration
+     * @param channel_id Channel number (0-5)
+     * @param config Output parameter to receive channel configuration
+     * @return true on success, false if channel_id is invalid
+     */
+    bool getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const;
+
+    /**
+     * @brief Get phase offset for a channel
+     * @param channel_id Channel number (0-5)
+     * @return Phase offset in degrees (0-360), or 0 if invalid channel
+     */
+    float getPhaseOffset(uint8_t channel_id) const;
+
+    /**
+     * @brief Get signal polarity for a channel
+     * @param channel_id Channel number (0-5)
+     * @return Signal polarity (POLARITY_ACTIVE_HIGH or POLARITY_ACTIVE_LOW)
+     */
+    SignalPolarity getPolarity(uint8_t channel_id) const;
+
     // ===== STATUS INDICATOR METHODS =====
 
     /**

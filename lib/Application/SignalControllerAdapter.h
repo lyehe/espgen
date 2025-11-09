@@ -88,17 +88,35 @@ public:
     }
 
     int getChannelPin(uint8_t channel) const override {
-        // Note: Currently only master channel pin is available
         if (channel == 0) {
             return _engine.getOutputPin();
         }
-        return -1; // Not available without getters in PulseGenerator
+        PulseChannelConfig_t config;
+        if (_engine.getChannelConfig(channel, config)) {
+            return config.pin;
+        }
+        return -1; // Invalid channel
     }
 
     bool isChannelEnabled(uint8_t channel) const override {
-        // Note: Would need getters in PulseGenerator
         if (channel == 0) return true; // Master always enabled
-        return false; // Unknown without getters
+        PulseChannelConfig_t config;
+        if (_engine.getChannelConfig(channel, config)) {
+            return config.enabled;
+        }
+        return false; // Invalid channel or disabled
+    }
+
+    float getChannelPhaseOffset(uint8_t channel) const override {
+        return _engine.getChannelPhaseOffset(channel);
+    }
+
+    SignalPolarity getChannelPolarity(uint8_t channel) const override {
+        return _engine.getChannelPolarity(channel);
+    }
+
+    bool getChannelConfig(uint8_t channel, PulseChannelConfig_t& config) const override {
+        return _engine.getChannelConfig(channel, config);
     }
 
     bool triggerSync() override {

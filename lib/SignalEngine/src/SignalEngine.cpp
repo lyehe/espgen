@@ -454,6 +454,19 @@ int SignalEngine::getOutputPin() const {
     return result;
 }
 
+// --- Channel Configuration Getters ---
+bool SignalEngine::getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const {
+    return pulseGen.getChannelConfig(channel_id, config);
+}
+
+float SignalEngine::getChannelPhaseOffset(uint8_t channel_id) const {
+    return pulseGen.getPhaseOffset(channel_id);
+}
+
+SignalPolarity SignalEngine::getChannelPolarity(uint8_t channel_id) const {
+    return pulseGen.getPolarity(channel_id);
+}
+
 // --- Private Static Task Functions ---
 
 void SignalEngine::cmdDispatcherTask(void *pvParameters) {

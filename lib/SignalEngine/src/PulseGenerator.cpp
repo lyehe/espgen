@@ -431,6 +431,28 @@ uint8_t PulseGenerator::getEnabledSlaveCount() const {
     return count;
 }
 
+bool PulseGenerator::getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        return false;
+    }
+    config = _channels[channel_id];
+    return true;
+}
+
+float PulseGenerator::getPhaseOffset(uint8_t channel_id) const {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        return 0.0;
+    }
+    return _channels[channel_id].phase_offset_deg;
+}
+
+SignalPolarity PulseGenerator::getPolarity(uint8_t channel_id) const {
+    if (channel_id >= MAX_PULSE_CHANNELS) {
+        return POLARITY_ACTIVE_HIGH;  // Default
+    }
+    return _polarities[channel_id];
+}
+
 // Private helper functions
 
 bool PulseGenerator::_initMCPWM() {

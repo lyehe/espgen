@@ -34,12 +34,17 @@ public:
 
     /**
      * @brief Gets the current status of the signal generator.
-     * 
+     *
      * @param status Reference to a SignalStatus_t struct to be filled.
      * @return SignalError Returns SIG_ERR_NONE on success, or an error code.
      *         (Currently assumes single channel, may need expansion for multi-channel)
      */
     SignalError getCurrentStatus(SignalStatus_t& status);
+
+    // --- Channel Configuration Getters ---
+    bool getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const;
+    float getChannelPhaseOffset(uint8_t channel_id) const;
+    SignalPolarity getChannelPolarity(uint8_t channel_id) const;
 
 private:
     // Multi-channel pulse generator (MCPWM-based)

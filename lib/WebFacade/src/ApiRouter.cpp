@@ -527,15 +527,22 @@ void ApiRouter::handleChannelsGet(AsyncWebServerRequest *request) {
     ch0["enabled"] = true; // Master is always enabled
     ch0["phase_offset"] = 0; // Master has no phase offset
 
+    // Get polarity for master channel
+    SignalPolarity masterPolarity = _controller.getChannelPolarity(0);
+    ch0["polarity"] = (masterPolarity == POLARITY_ACTIVE_HIGH) ? "high" : "low";
+
     // Channels 1-5 (slaves)
-    // TODO: Add getters to SignalEngine/PulseGenerator to retrieve actual channel configs
     for (int i = 1; i <= 5; i++) {
         JsonObject ch = channels.add<JsonObject>();
         ch["id"] = i;
         ch["type"] = "slave";
-        ch["pin"] = 0; // Unknown without getter
-        ch["enabled"] = false; // Unknown without getter
-        ch["phase_offset"] = 0; // Unknown without getter
+        ch["pin"] = _controller.getChannelPin(i);
+        ch["enabled"] = _controller.isChannelEnabled(i);
+        ch["phase_offset"] = _controller.getChannelPhaseOffset(i);
+
+        // Get polarity (convert enum to string)
+        SignalPolarity polarity = _controller.getChannelPolarity(i);
+        ch["polarity"] = (polarity == POLARITY_ACTIVE_HIGH) ? "high" : "low";
     }
 
     String output;
