@@ -28,6 +28,7 @@ void heartbeat_task(void *pvParameters) {
 
 SignalEngine::SignalEngine() :
     pulseGen(),
+    _initialized(false),
     _currentFrequencyHz(DEFAULT_FREQUENCY_HZ),
     _currentDutyCycle(DEFAULT_DUTY_CYCLE),
     _isRunning(false),
@@ -44,42 +45,82 @@ SignalEngine::SignalEngine() :
     _outputPin(DEFAULT_OUTPUT_PIN)
 {
     // Constructor body (if needed)
-}                           
+}
 
-void SignalEngine::begin() {
+bool SignalEngine::begin() {
     Serial.println("SignalEngine: Initializing...");
+    _initialized = false; // Clear initialization flag
     _startTimeMicros = 0; // Ensure start time is 0 initially
     _accumulatedTicks = 0; // Ensure accumulated ticks are 0 initially
     _requestedDurationSec = 0; // Ensure duration is 0 initially
     _durationStartTimeMicros = 0;
 
-    // --- Load Settings from NVS --- 
+    // --- Load Settings from NVS ---
     Preferences preferences;
-    preferences.begin(NVS_NAMESPACE, false); // Start SignalEngine namespace first
+    double loadedFreq = DEFAULT_FREQUENCY_HZ;
+    float loadedDuty = DEFAULT_DUTY_CYCLE;
+    float loadedDur = 0.0f;
 
-    // Load values, using compile-time defaults if not found
-    double loadedFreq = preferences.getDouble(NVS_KEY_FREQ, DEFAULT_FREQUENCY_HZ);
-    float loadedDuty = preferences.getFloat(NVS_KEY_DUTY, DEFAULT_DUTY_CYCLE);
-    float loadedDur = preferences.getFloat(NVS_KEY_DUR, 0.0f); // Default duration is 0 (infinite)
-    preferences.end(); // Close SignalEngine namespace
+    if (!preferences.begin(NVS_NAMESPACE, false)) {
+        Serial.printf("SignalEngine: ERROR - Failed to open NVS namespace '%s'\n", NVS_NAMESPACE);
+        Serial.println("SignalEngine: Using default values for all settings");
+        // Values already set to defaults above
+    } else {
+        // Load values, using compile-time defaults if not found
+        loadedFreq = preferences.getDouble(NVS_KEY_FREQ, DEFAULT_FREQUENCY_HZ);
+        loadedDuty = preferences.getFloat(NVS_KEY_DUTY, DEFAULT_DUTY_CYCLE);
+        loadedDur = preferences.getFloat(NVS_KEY_DUR, 0.0f); // Default duration is 0 (infinite)
+        preferences.end(); // Close SignalEngine namespace
+    }
 
-    // --- Load device config (including pin) --- 
-    preferences.begin(DEVICE_CFG_NAMESPACE, false); // Open device config namespace
-    _outputPin = preferences.getUChar(OUTPUT_PIN_KEY, DEFAULT_OUTPUT_PIN);
-    preferences.end(); // Close device config namespace
+    // Validate loaded values from SignalEngine namespace
+    if (!isValidFrequency(loadedFreq)) {
+        Serial.printf("SignalEngine: WARNING - Invalid frequency %.2f Hz in NVS, using default %.2f Hz\n",
+                     loadedFreq, DEFAULT_FREQUENCY_HZ);
+        loadedFreq = DEFAULT_FREQUENCY_HZ;
+    }
 
-    // Validate loaded pin (just in case NVS was corrupted or value is invalid)
-    if (_outputPin < 12 || _outputPin > 19) {
-        Serial.printf("SignalEngine: Warning - Invalid pin %d loaded from NVS. Using default %d.\n", _outputPin, DEFAULT_OUTPUT_PIN);
+    if (!isValidDutyCycle(loadedDuty)) {
+        Serial.printf("SignalEngine: WARNING - Invalid duty cycle %.2f in NVS, using default %.2f\n",
+                     loadedDuty, DEFAULT_DUTY_CYCLE);
+        loadedDuty = DEFAULT_DUTY_CYCLE;
+    }
+
+    if (!isValidDuration(loadedDur)) {
+        Serial.printf("SignalEngine: WARNING - Invalid duration %.2f s in NVS, using default 0.0s\n",
+                     loadedDur);
+        loadedDur = 0.0f;
+    }
+
+    // --- Load device config (including pin) ---
+    if (!preferences.begin(DEVICE_CFG_NAMESPACE, false)) {
+        Serial.printf("SignalEngine: ERROR - Failed to open NVS namespace '%s'\n", DEVICE_CFG_NAMESPACE);
+        Serial.printf("SignalEngine: Using default pin %d\n", DEFAULT_OUTPUT_PIN);
         _outputPin = DEFAULT_OUTPUT_PIN;
-        // Optionally, save the default back to NVS here?
+    } else {
+        _outputPin = preferences.getUChar(OUTPUT_PIN_KEY, DEFAULT_OUTPUT_PIN);
+        preferences.end(); // Close device config namespace
+
+        // Validate loaded pin using new validation helper
+        if (!isValidOutputPin(_outputPin)) {
+            Serial.printf("SignalEngine: ERROR - Invalid pin %d loaded from NVS. Using default %d.\n",
+                         _outputPin, DEFAULT_OUTPUT_PIN);
+            _outputPin = DEFAULT_OUTPUT_PIN;
+
+            // Save corrected pin back to NVS
+            if (preferences.begin(DEVICE_CFG_NAMESPACE, false)) {
+                preferences.putUChar(OUTPUT_PIN_KEY, _outputPin);
+                preferences.end();
+                Serial.println("SignalEngine: Corrected pin saved to NVS");
+            }
+        }
     }
     Serial.printf(" - Loaded Output Pin: %d (Namespace: %s, Key: %s)\n", _outputPin, DEVICE_CFG_NAMESPACE, OUTPUT_PIN_KEY);
 
-    Serial.printf(" - Loaded Freq/Duty: F=%.2f Hz, D=%.2f%%, Dur=%.2f s\n", 
+    Serial.printf(" - Loaded Freq/Duty: F=%.2f Hz, D=%.2f%%, Dur=%.2f s\n",
                   loadedFreq, loadedDuty * 100.0, loadedDur);
 
-    // Apply loaded settings to internal state
+    // Apply validated settings to internal state
     _currentFrequencyHz = loadedFreq;
     _currentDutyCycle = loadedDuty;
     _lastAppliedFrequencyHz = loadedFreq;
@@ -92,9 +133,9 @@ void SignalEngine::begin() {
     // Create the command queue
     xQueueCmd = xQueueCreate(SIGNAL_ENGINE_CMD_QUEUE_LEN, sizeof(SignalCmd));
     if (xQueueCmd == NULL) {
-        Serial.println("SignalEngine: Error creating command queue!");
-        // Handle error appropriately - maybe halt or signal critical failure
-        return;
+        Serial.println("SignalEngine: CRITICAL - Failed to create command queue!");
+        Serial.println("SignalEngine: Initialization FAILED");
+        return false;
     }
     Serial.printf("SignalEngine: Command queue created (size: %d)\n", SIGNAL_ENGINE_CMD_QUEUE_LEN);
 
@@ -102,16 +143,17 @@ void SignalEngine::begin() {
     _stateMutex = xSemaphoreCreateMutex();
     if (_stateMutex == NULL) {
         Serial.println("SignalEngine: CRITICAL - Failed to create state mutex!");
-        Serial.println("SignalEngine: Thread safety NOT enabled - expect data corruption!");
-        // Continue anyway but warn user
-    } else {
-        Serial.println("SignalEngine: State mutex created - thread safety enabled");
+        Serial.println("SignalEngine: Thread safety cannot be enabled!");
+        Serial.println("SignalEngine: Initialization FAILED");
+        return false;
     }
+    Serial.println("SignalEngine: State mutex created - thread safety enabled");
 
     // Initialize the PulseGenerator
     if (!pulseGen.begin()) {
-        Serial.println("SignalEngine: Error - Failed to initialize PulseGenerator!");
-        return;
+        Serial.println("SignalEngine: CRITICAL - Failed to initialize PulseGenerator!");
+        Serial.println("SignalEngine: Initialization FAILED");
+        return false;
     }
 
     // Configure master channel (Channel 0) with loaded settings
@@ -137,15 +179,16 @@ void SignalEngine::begin() {
     );
 
     if (taskCreated != pdPASS) {
-        Serial.println("SignalEngine: Error creating command dispatcher task!");
-        // Handle error
-        return;
+        Serial.println("SignalEngine: CRITICAL - Failed to create command dispatcher task!");
+        Serial.println("SignalEngine: Initialization FAILED");
+        return false;
     }
     Serial.println("SignalEngine: Command dispatcher task started.");
 
     // Create the heartbeat task (as per Phase 1 requirements)
     // Stack size might need adjustment later. Priority 1 is low.
-    xTaskCreate(
+    // Note: Heartbeat is optional, so we don't fail initialization if it fails
+    BaseType_t heartbeatCreated = xTaskCreate(
         heartbeat_task,         // Task function
         "HeartbeatTask",        // Name of the task
         1024,                   // Stack size in words
@@ -153,9 +196,16 @@ void SignalEngine::begin() {
         1,                      // Priority of the task
         NULL                    // Task handle
     );
-    Serial.println("SignalEngine: Heartbeat task started.");
 
-    Serial.println("SignalEngine: Initialization complete.");
+    if (heartbeatCreated != pdPASS) {
+        Serial.println("SignalEngine: WARNING - Failed to create heartbeat task (non-critical)");
+    } else {
+        Serial.println("SignalEngine: Heartbeat task started.");
+    }
+
+    _initialized = true; // Mark as successfully initialized
+    Serial.println("SignalEngine: Initialization complete - READY");
+    return true;
 }
 
 void SignalEngine::loop() {
@@ -243,15 +293,24 @@ void SignalEngine::loop() {
 
 // --- Public Methods ---
 
+bool SignalEngine::isInitialized() const {
+    return _initialized;
+}
+
 bool SignalEngine::sendCommand(const SignalCmd& cmd) {
+    if (!_initialized) {
+        Serial.println("SignalEngine::sendCommand - ERROR: Engine not initialized!");
+        return false;
+    }
+
     if (xQueueCmd == NULL) {
-        Serial.println("SignalEngine::sendCommand - Error: Queue not initialized.");
+        Serial.println("SignalEngine::sendCommand - ERROR: Queue not initialized.");
         return false;
     }
 
     // Send the command to the queue. Wait 0 ticks if the queue is full.
     if (xQueueSend(xQueueCmd, &cmd, (TickType_t)0) != pdPASS) {
-        Serial.println("SignalEngine::sendCommand - Warning: Command queue full.");
+        Serial.println("SignalEngine::sendCommand - WARNING: Command queue full.");
         return false; // Indicate failure
     }
     return true; // Indicate success
@@ -905,14 +964,18 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     eventData.current_ticks = engine->getEstimatedCycleCount(); // Populate with calculated cycles
                 }
                 // Always include the current pin in the event data
-                eventData.output_pin = engine->_outputPin; 
+                eventData.output_pin = engine->_outputPin;
 
-                // Post the event to the default event loop
-                esp_err_t post_err = esp_event_post(SIGNAL_EVENTS, eventId, &eventData, sizeof(eventData), portMAX_DELAY);
-                if (post_err != ESP_OK) {
-                     Serial.printf("Error posting signal event %d: %s\n", eventId, esp_err_to_name(post_err));
+                // Post the event to the default event loop with timeout
+                const TickType_t EVENT_POST_TIMEOUT_MS = 100; // 100ms timeout
+                esp_err_t post_err = esp_event_post(SIGNAL_EVENTS, eventId, &eventData, sizeof(eventData),
+                                                    pdMS_TO_TICKS(EVENT_POST_TIMEOUT_MS));
+                if (post_err == ESP_ERR_TIMEOUT) {
+                    Serial.printf("WARNING: Event queue full, event %d dropped\n", eventId);
+                } else if (post_err != ESP_OK) {
+                    Serial.printf("ERROR: Failed to post event %d: %s\n", eventId, esp_err_to_name(post_err));
                 } else {
-                     Serial.printf("Posted event: Base=%s, ID=%d\n", "SIGNAL_EVENTS", eventId);
+                    Serial.printf("Posted event: Base=%s, ID=%d\n", "SIGNAL_EVENTS", eventId);
                 }
             }
         }

@@ -4,6 +4,8 @@
 
 #include <Arduino.h>
 #include "build_opts.h"
+#include "esp_event.h"      // ESP-IDF event loop
+#include "SystemHealth.h"   // System health monitoring
 
 #include "SignalEngine.h"
 #include "signal_iface.h" // Needed for SignalCmd struct
@@ -72,9 +74,25 @@ void setup() {
     Serial.println("\n--- ESP32 Trigger Production Firmware ---");
     Serial.printf("Build: %s %s\n", __DATE__, __TIME__);
 
-    // Initialize core engine first
-    signalEngine.begin();
+    // Initialize ESP-IDF event loop FIRST (required for event posting)
+    Serial.println("Initializing event loop...");
+    esp_err_t err = esp_event_loop_create_default();
+    if (err != ESP_OK) {
+        Serial.printf("CRITICAL: Failed to create event loop: %s\n", esp_err_to_name(err));
+        Serial.println("System halted - reboot required");
+        while(1) { delay(1000); } // Halt system
+    }
+    Serial.println("Event loop initialized successfully");
+
+    // Initialize core engine
+    Serial.println("Initializing SignalEngine...");
+    if (!signalEngine.begin()) {
+        Serial.println("FATAL: SignalEngine initialization failed!");
+        Serial.println("System halted - reboot required");
+        while(1) { delay(1000); } // Halt system
+    }
     signalEnginePtr = &signalEngine; // Assign address to pointer
+    Serial.println("SignalEngine ready");
 
     // Initialize Button
     button.begin(BUTTON_PIN, INPUT_PULLUP); // Assuming internal pull-up
@@ -110,6 +128,15 @@ void loop() {
 #if BUILD_WEB
     // webFacade.loop(); // WebFacade relies on AsyncWebServer tasks
 #endif
+
+    // Periodic system health monitoring (every 30 seconds)
+    static unsigned long lastHealthCheck = 0;
+    const unsigned long HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+
+    if (millis() - lastHealthCheck >= HEALTH_CHECK_INTERVAL) {
+        lastHealthCheck = millis();
+        SystemHealth::logWarnings(); // Log warnings if resources are low
+    }
 
     // Keep the main loop relatively light, tasks handle heavy lifting.
     // Add delay or yield if necessary, e.g., if watchdog timer bites.

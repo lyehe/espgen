@@ -16,7 +16,7 @@ WebSocketHub::WebSocketHub(AsyncWebServer& server) :
 }
 
 // Initialize WebSocket endpoint and event handling
-void WebSocketHub::begin() {
+bool WebSocketHub::begin() {
     // Register the WebSocket event handler
     _ws.onEvent(onWsEvent);
 
@@ -28,10 +28,22 @@ void WebSocketHub::begin() {
     // Register the ESP event handler to listen for SignalEngine events
     esp_err_t reg_err = esp_event_handler_register(SIGNAL_EVENTS, ESP_EVENT_ANY_ID, &espEventHandler, this);
     if (reg_err != ESP_OK) {
-         Serial.printf("WebSocketHub: Error registering ESP event handler: %s\n", esp_err_to_name(reg_err));
-    } else {
-         Serial.println("WebSocketHub: Registered ESP event handler for SIGNAL_EVENTS.");
+        Serial.printf("WebSocketHub: CRITICAL - Event handler registration failed: %s\n",
+                     esp_err_to_name(reg_err));
+
+        if (reg_err == ESP_ERR_INVALID_STATE) {
+            Serial.println("  Likely cause: Event loop not created!");
+            Serial.println("  Call esp_event_loop_create_default() in setup()");
+        } else if (reg_err == ESP_ERR_NO_MEM) {
+            Serial.println("  Likely cause: Out of memory!");
+        }
+
+        Serial.println("WebSocketHub: Initialization FAILED - WebSocket updates will not work");
+        return false;
     }
+
+    Serial.println("WebSocketHub: Event handler registered successfully");
+    return true;
 }
 
 // Static handler for WebSocket events
@@ -66,14 +78,41 @@ void WebSocketHub::onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *clien
 
 // Static handler for ESP events from SignalEngine
 void WebSocketHub::espEventHandler(void* handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-    if (event_base == SIGNAL_EVENTS) {
-        WebSocketHub* hub = static_cast<WebSocketHub*>(handler_arg); // Get instance pointer
-        SignalEvtData* data = static_cast<SignalEvtData*>(event_data); // Get event data
+    // Validate event base
+    if (event_base != SIGNAL_EVENTS) {
+        return; // Not our event
+    }
+
+    // Validate handler argument (instance pointer)
+    if (!handler_arg) {
+        Serial.println("ERROR: NULL handler_arg in WebSocketHub event handler!");
+        return;
+    }
+
+    // Validate event data
+    if (!event_data) {
+        Serial.println("ERROR: NULL event_data in WebSocketHub event handler!");
+        return;
+    }
+
+    // Isolate handler execution to prevent crashes from propagating
+    try {
+        WebSocketHub* hub = static_cast<WebSocketHub*>(handler_arg);
+        SignalEvtData* data = static_cast<SignalEvtData*>(event_data);
 
         Serial.printf("WebSocketHub: Received event ID %ld from SIGNAL_EVENTS\n", event_id);
 
         // Call the broadcast method on the instance, passing event data directly
         hub->broadcastStatus(event_id, *data);
+
+    } catch (const std::exception& e) {
+        Serial.printf("EXCEPTION in WebSocketHub event handler for event %ld: %s\n",
+                     event_id, e.what());
+        // Don't rethrow - isolate the error
+    } catch (...) {
+        Serial.printf("UNKNOWN EXCEPTION in WebSocketHub event handler for event %ld\n",
+                     event_id);
+        // Don't rethrow - isolate the error
     }
 }
 

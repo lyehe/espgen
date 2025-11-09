@@ -218,6 +218,91 @@ static inline bool validateSignalCmd(const SignalCmd* cmd) {
     return true;
 }
 
+/**
+ * @brief Configuration value validation helpers
+ * These functions validate configuration values loaded from NVS or API
+ */
+
+/**
+ * @brief Check if a frequency value is valid for ESP32 MCPWM
+ * @param freq Frequency in Hz
+ * @return true if valid, false otherwise
+ */
+static inline bool isValidFrequency(double freq) {
+    return freq > 0.0 && freq <= 8000000.0; // 0-8MHz for ESP32 MCPWM
+}
+
+/**
+ * @brief Check if a duty cycle value is valid
+ * @param duty Duty cycle (0.0 to 1.0)
+ * @return true if valid, false otherwise
+ */
+static inline bool isValidDutyCycle(float duty) {
+    return duty >= 0.0f && duty <= 1.0f;
+}
+
+/**
+ * @brief Check if a duration value is valid
+ * @param duration Duration in seconds (0 = infinite)
+ * @return true if valid, false otherwise
+ */
+static inline bool isValidDuration(float duration) {
+    return duration >= 0.0f; // 0 = infinite, negative invalid
+}
+
+/**
+ * @brief Check if a GPIO pin is valid for output
+ *
+ * Valid pins exclude:
+ * - GPIO 6-11 (connected to flash)
+ * - GPIO 1, 3 (UART TX/RX - can be used but may interfere with serial)
+ * - GPIO 0 (boot strapping - can be used but used for boot mode)
+ *
+ * @param pin GPIO pin number
+ * @return true if valid for signal output, false otherwise
+ */
+static inline bool isValidOutputPin(uint8_t pin) {
+    // Safe GPIO pins for general use
+    const uint8_t VALID_PINS[] = {
+        2, 4, 5,              // GPIO 2, 4, 5
+        12, 13, 14, 15,       // GPIO 12-15
+        16, 17, 18, 19,       // GPIO 16-19
+        21, 22, 23,           // GPIO 21-23
+        25, 26, 27,           // GPIO 25-27
+        32, 33                // GPIO 32-33
+    };
+
+    const size_t numValidPins = sizeof(VALID_PINS) / sizeof(VALID_PINS[0]);
+
+    for (size_t i = 0; i < numValidPins; i++) {
+        if (pin == VALID_PINS[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Check if a period value is valid
+ * @param periodUs Period in microseconds
+ * @return true if valid, false otherwise
+ */
+static inline bool isValidPeriod(uint32_t periodUs) {
+    // Min period: ~0.125us (8MHz max)
+    // Max period: 1000 seconds
+    return periodUs >= 1 && periodUs <= 1000000000;
+}
+
+/**
+ * @brief Check if a pulse width is valid relative to period
+ * @param pulseWidthUs Pulse width in microseconds
+ * @param periodUs Period in microseconds
+ * @return true if valid, false otherwise
+ */
+static inline bool isValidPulseWidth(uint32_t pulseWidthUs, uint32_t periodUs) {
+    return pulseWidthUs <= periodUs;
+}
+
 #ifdef __cplusplus
 }
 #endif

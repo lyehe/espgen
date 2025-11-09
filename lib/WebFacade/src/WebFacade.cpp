@@ -91,7 +91,11 @@ void WebFacade::begin()
     Serial.println("API routes registered.");
 
     // Initialize WebSocket Hub (adds /ws handler)
-    _wsHub.begin(); // This call now exists
+    if (!_wsHub.begin()) {
+        Serial.println("WebFacade: ERROR - WebSocket hub initialization failed!");
+        Serial.println("WebFacade: WebSocket updates will not work, but continuing...");
+        // Continue anyway - web interface will work, just no real-time updates
+    }
 
     // --- Register standard handlers ---
 

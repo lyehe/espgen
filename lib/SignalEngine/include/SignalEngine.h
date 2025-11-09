@@ -14,11 +14,12 @@ ESP_EVENT_DECLARE_BASE(SIGNAL_EVENTS);
 class SignalEngine {
 public:
     SignalEngine();
-    void begin();
+    bool begin(); // Initialize engine - returns false on critical failure
     void loop(); // For periodic tasks if needed (e.g., heartbeat)
     bool sendCommand(const SignalCmd& cmd); // Send command to the engine's queue
 
     // --- Status Getters ---
+    bool isInitialized() const; // Check if initialization succeeded
     double getCurrentFrequencyHz() const;
     float getCurrentDutyCycle() const;
     bool isRunning() const; // Simple check if currently active
@@ -49,6 +50,9 @@ public:
 private:
     // Multi-channel pulse generator (MCPWM-based)
     PulseGenerator pulseGen;
+
+    // Initialization state
+    bool _initialized;
 
     // Current signal state
     double _currentFrequencyHz;
