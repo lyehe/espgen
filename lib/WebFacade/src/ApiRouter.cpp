@@ -179,6 +179,56 @@ void ApiRouter::registerRoutes() {
             }
         }
     });
+
+    // POST /api/channel - Configure slave channel
+    _server.on("/api/channel", HTTP_POST, [this](AsyncWebServerRequest *request){
+        if (!request->_tempObject) {
+            request->_tempObject = new RequestBodyState();
+        }
+    },
+    NULL, // No file upload
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+        if (state) {
+            if (index == 0) {
+                state->buffer.clear();
+                state->buffer.reserve(total + 1);
+            }
+            state->buffer.insert(state->buffer.end(), data, data + len);
+        }
+
+        if (index + len == total) {
+            Serial.printf("Received POST /api/channel, Body Size: %d\n", total);
+            if (state) {
+                state->buffer.push_back(0);
+
+                JsonDocument jsonDoc;
+                DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                if (error) {
+                    Serial.print("deserializeJson() failed: ");
+                    Serial.println(error.c_str());
+                    request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                } else {
+                    JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                    this->handleChannelPost(request, jsonVariant);
+                }
+
+                delete state;
+                request->_tempObject = nullptr;
+            }
+        }
+    });
+
+    // GET /api/channels - Get all channel configurations
+    _server.on("/api/channels", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handleChannelsGet(request);
+    });
+
+    // POST /api/sync - Trigger manual sync
+    _server.on("/api/sync", HTTP_POST, [this](AsyncWebServerRequest *request){
+        this->handleSyncPost(request);
+    });
 }
 
 // Handler implementation for GET /api/discovery
@@ -235,24 +285,67 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
     }
 
     const char* commandStr = obj["command"];
-    // uint8_t channel = obj["channel"] | 0; // Channel currently not in SignalCmd
-    uint32_t freq = obj["frequency"] | 1000;
-    float duty = obj["duty_cycle"] | 0.5f;
-    float duration = obj["duration_sec"] | 0.0f; // Parse duration_sec, default 0
-
     SignalCmd cmd = {0}; // Zero-initialize entire structure
     bool commandValid = true;
+
+    // Parse channel (default to 0)
+    cmd.channel = obj["channel"] | 0;
+
+    // Parse polarity (default to active high)
+    if (obj.containsKey("polarity")) {
+        const char* polarityStr = obj["polarity"];
+        if (strcmp(polarityStr, "active_low") == 0) {
+            cmd.polarity = POLARITY_ACTIVE_LOW;
+        } else {
+            cmd.polarity = POLARITY_ACTIVE_HIGH;
+        }
+    } else {
+        cmd.polarity = POLARITY_ACTIVE_HIGH;
+    }
+
+    // Initialize paramMode
+    cmd.paramMode = 0;
 
     // Use correct enum type and values
     if (strcmp(commandStr, "start") == 0) {
         cmd.type = SIG_CMD_START;
-        cmd.frequencyHz = freq;
-        cmd.dutyCycle = duty;
-        cmd.durationSec = duration; // Set duration for start command
-        cmd.polarity = POLARITY_ACTIVE_HIGH;
-        // Set paramMode flags to indicate which union fields are active
-        cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE | PARAM_USE_DURATION;
-        Serial.printf("API: Parsed START (Freq: %lu, Duty: %.2f, Duration: %.2f s)\n", freq, duty, duration);
+
+        // Frequency OR Period
+        if (obj.containsKey("period_us")) {
+            cmd.periodUs = obj["period_us"];
+            cmd.paramMode |= PARAM_USE_PERIOD;
+            Serial.printf("API: Using period: %lu us\n", cmd.periodUs);
+        } else {
+            cmd.frequencyHz = obj["frequency"] | 1000;
+            cmd.paramMode |= PARAM_USE_FREQUENCY;
+            Serial.printf("API: Using frequency: %.2f Hz\n", cmd.frequencyHz);
+        }
+
+        // Duty Cycle OR Pulse Width
+        if (obj.containsKey("pulse_width_us")) {
+            cmd.pulseWidthUs = obj["pulse_width_us"];
+            cmd.paramMode |= PARAM_USE_PULSE_WIDTH;
+            Serial.printf("API: Using pulse width: %lu us\n", cmd.pulseWidthUs);
+        } else {
+            cmd.dutyCycle = obj["duty_cycle"] | 0.5f;
+            cmd.paramMode |= PARAM_USE_DUTY_CYCLE;
+            Serial.printf("API: Using duty cycle: %.2f\n", cmd.dutyCycle);
+        }
+
+        // Duration OR Pulse Count
+        if (obj.containsKey("pulse_count")) {
+            cmd.pulseCount = obj["pulse_count"];
+            cmd.paramMode |= PARAM_USE_PULSE_COUNT;
+            Serial.printf("API: Using pulse count: %llu\n", cmd.pulseCount);
+        } else {
+            cmd.durationSec = obj["duration_sec"] | 0.0f;
+            cmd.paramMode |= PARAM_USE_DURATION;
+            Serial.printf("API: Using duration: %.2f s\n", cmd.durationSec);
+        }
+
+        Serial.printf("API: Parsed START (Channel: %d, Polarity: %s)\n",
+                     cmd.channel,
+                     cmd.polarity == POLARITY_ACTIVE_HIGH ? "HIGH" : "LOW");
     } else if (strcmp(commandStr, "stop") == 0) {
         cmd.type = SIG_CMD_STOP;
         cmd.paramMode = 0; // STOP doesn't need parameters
@@ -260,11 +353,26 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
     } else if (strcmp(commandStr, "update") == 0) {
         // Assuming "update" corresponds to UPDATE_ALL
         cmd.type = SIG_CMD_UPDATE_ALL;
-        cmd.frequencyHz = freq;
-        cmd.dutyCycle = duty;
-        // Set paramMode flags for UPDATE_ALL
-        cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE;
-        Serial.printf("API: Parsed UPDATE (Freq: %lu, Duty: %.2f)\n", freq, duty);
+
+        // Frequency OR Period
+        if (obj.containsKey("period_us")) {
+            cmd.periodUs = obj["period_us"];
+            cmd.paramMode |= PARAM_USE_PERIOD;
+        } else {
+            cmd.frequencyHz = obj["frequency"] | 1000;
+            cmd.paramMode |= PARAM_USE_FREQUENCY;
+        }
+
+        // Duty Cycle OR Pulse Width
+        if (obj.containsKey("pulse_width_us")) {
+            cmd.pulseWidthUs = obj["pulse_width_us"];
+            cmd.paramMode |= PARAM_USE_PULSE_WIDTH;
+        } else {
+            cmd.dutyCycle = obj["duty_cycle"] | 0.5f;
+            cmd.paramMode |= PARAM_USE_DUTY_CYCLE;
+        }
+
+        Serial.printf("API: Parsed UPDATE\n");
     } else {
         commandValid = false;
         Serial.printf("API: Invalid command '%s'\n", commandStr);
@@ -343,5 +451,112 @@ void ApiRouter::handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVaria
     } else {
         request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
         Serial.println("API: Command queue full for set indicator.");
+    }
+}
+
+// Handler implementation for POST /api/channel
+void ApiRouter::handleChannelPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    // Validate required fields
+    if (!obj || !obj["channel"].is<int>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'channel' field (must be integer)\"}");
+        return;
+    }
+
+    int channel = obj["channel"];
+
+    // Channel must be 1-5 (slave channels only)
+    if (channel < 1 || channel > 5) {
+        request->send(400, "application/json", "{\"error\":\"Channel must be 1-5 (slave channels only)\"}");
+        return;
+    }
+
+    SignalCmd cmd = {0};
+    cmd.type = SIG_CMD_CONFIG_CHANNEL;
+    cmd.channel = (uint8_t)channel;
+
+    // Parse pin (optional)
+    if (obj.containsKey("pin")) {
+        cmd.pin = obj["pin"];
+    }
+
+    // Parse phase offset (optional) - can be degrees OR time delay
+    if (obj.containsKey("phase_delay_us")) {
+        cmd.phaseDelayUs = obj["phase_delay_us"];
+        cmd.paramMode |= PARAM_USE_PHASE_TIME;
+        Serial.printf("API: Channel %d phase delay: %lu us\n", channel, cmd.phaseDelayUs);
+    } else if (obj.containsKey("phase_offset")) {
+        cmd.phaseOffset = obj["phase_offset"];
+        cmd.paramMode |= PARAM_USE_PHASE_DEGREES;
+        Serial.printf("API: Channel %d phase offset: %.2f degrees\n", channel, cmd.phaseOffset);
+    }
+
+    // Parse enabled (optional)
+    if (obj.containsKey("enabled")) {
+        cmd.enabled = obj["enabled"];
+    } else {
+        cmd.enabled = true; // Default to enabled
+    }
+
+    Serial.printf("API: Configuring channel %d (pin: %d, enabled: %s)\n",
+                 channel, cmd.pin, cmd.enabled ? "true" : "false");
+
+    if (_engine.sendCommand(cmd)) {
+        request->send(200, "application/json", "{\"status\":\"channel config queued\"}");
+        Serial.println("API: Channel config command sent successfully.");
+    } else {
+        request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+        Serial.println("API: Command queue full for channel config.");
+    }
+}
+
+// Handler implementation for GET /api/channels
+void ApiRouter::handleChannelsGet(AsyncWebServerRequest *request) {
+    // Note: We need to add getters to SignalEngine to access PulseGenerator channel info
+    // For now, we'll return a basic structure showing that the endpoint exists
+
+    JsonDocument doc;
+    JsonArray channels = doc["channels"].to<JsonArray>();
+
+    // Channel 0 (master)
+    JsonObject ch0 = channels.add<JsonObject>();
+    ch0["id"] = 0;
+    ch0["type"] = "master";
+    ch0["pin"] = _engine.getOutputPin();
+    ch0["enabled"] = true; // Master is always enabled
+    ch0["phase_offset"] = 0; // Master has no phase offset
+
+    // Channels 1-5 (slaves)
+    // TODO: Add getters to SignalEngine/PulseGenerator to retrieve actual channel configs
+    for (int i = 1; i <= 5; i++) {
+        JsonObject ch = channels.add<JsonObject>();
+        ch["id"] = i;
+        ch["type"] = "slave";
+        ch["pin"] = 0; // Unknown without getter
+        ch["enabled"] = false; // Unknown without getter
+        ch["phase_offset"] = 0; // Unknown without getter
+    }
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Sent GET /api/channels response");
+}
+
+// Handler implementation for POST /api/sync
+void ApiRouter::handleSyncPost(AsyncWebServerRequest *request) {
+    SignalCmd cmd = {0};
+    cmd.type = SIG_CMD_SYNC;
+    cmd.paramMode = 0; // SYNC doesn't need parameters
+
+    Serial.printf("API: Received sync trigger request\n");
+
+    if (_engine.sendCommand(cmd)) {
+        request->send(200, "application/json", "{\"status\":\"sync triggered\"}");
+        Serial.println("API: Sync command sent successfully.");
+    } else {
+        request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+        Serial.println("API: Command queue full for sync.");
     }
 }

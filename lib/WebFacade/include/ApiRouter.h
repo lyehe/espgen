@@ -34,6 +34,16 @@ private:
     // Handler for POST requests to /api/setindicator
     void handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVariant &json);
 
+    // --- New Multi-Channel and Advanced Feature Handlers ---
+    // Handler for POST requests to /api/channel (configure slave channels)
+    void handleChannelPost(AsyncWebServerRequest *request, JsonVariant &json);
+
+    // Handler for GET requests to /api/channels (get all channel status)
+    void handleChannelsGet(AsyncWebServerRequest *request);
+
+    // Handler for POST requests to /api/sync (trigger manual sync)
+    void handleSyncPost(AsyncWebServerRequest *request);
+
     // Static handler wrapper needed for AsyncWebServer library with JSON body
     static void handleTriggerPostWrapper(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
 };

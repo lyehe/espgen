@@ -72,13 +72,25 @@ void SerialCLI::parseAndExecute() {
     // Simple parsing logic (replace with more robust parser later)
     if (_inputBuffer == "help") {
         Serial.println("Available Commands:");
+        Serial.println("Basic Control:");
         Serial.println("  start              - Start signal generation (uses last/default params)");
         Serial.println("  stop               - Stop signal generation");
         Serial.println("  update freq duty   - Set frequency (Hz) and duty cycle (0.0-1.0)");
         Serial.println("  freq <hz>          - Set frequency only");
         Serial.println("  duty <0.0-1.0>     - Set duty cycle only");
-        Serial.println("  setpin <gpio>      - Set output pin (12-19)");
-        Serial.println("  status             - Show current status (Not Implemented)");
+        Serial.println("Exact Parameters:");
+        Serial.println("  period <us>        - Set period in microseconds");
+        Serial.println("  pulsewidth <us>    - Set pulse width in microseconds");
+        Serial.println("  pulsecount <n>     - Set exact pulse count (0=infinite)");
+        Serial.println("Multi-Channel:");
+        Serial.println("  channel <id> <pin> <phase> <en>  - Configure slave channel (1-5)");
+        Serial.println("                       id: 1-5, pin: GPIO, phase: 0-360, en: 0/1");
+        Serial.println("  sync               - Trigger multi-channel synchronization");
+        Serial.println("Advanced:");
+        Serial.println("  polarity <h|l>     - Set polarity (h=high, l=low)");
+        Serial.println("  setpin <gpio>      - Set master output pin (0-33)");
+        Serial.println("  indicator <gpio>   - Set status indicator pin (0=disabled)");
+        Serial.println("  status             - Show current status");
         // Add more help text
 
     } else if (_inputBuffer == "start") {
@@ -134,16 +146,139 @@ void SerialCLI::parseAndExecute() {
         int pin = 0;
         int argsParsed = sscanf(_inputBuffer.c_str(), "setpin %d", &pin);
         if (argsParsed == 1) {
-            if (pin >= 12 && pin <= 19) {
+            if (pin >= 0 && pin <= 33) {
                 cmd.type = SIG_CMD_SET_PIN;
                 cmd.pin = (uint8_t)pin;
                 commandSent = _engine.sendCommand(cmd);
             } else {
-                 Serial.println("Error: Invalid pin. Must be between 12 and 19.");
-                 commandSent = false; // Explicitly mark as not sent
+                 Serial.println("Error: Invalid pin. Must be between 0 and 33.");
+                 commandSent = false;
             }
         } else {
-            Serial.println("Error: Invalid format. Use: setpin <gpio_12_to_19>");
+            Serial.println("Error: Invalid format. Use: setpin <gpio>");
+        }
+    } else if (_inputBuffer.startsWith("period ")) {
+        // Example: period 10000
+        uint32_t period = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "period %lu", &period);
+        if (argsParsed == 1) {
+            cmd.type = SIG_CMD_UPDATE_ALL;
+            cmd.periodUs = period;
+            cmd.paramMode = PARAM_USE_PERIOD;
+            commandSent = _engine.sendCommand(cmd);
+            Serial.printf("Setting period to %lu us\n", period);
+        } else {
+            Serial.println("Error: Invalid format. Use: period <microseconds>");
+        }
+    } else if (_inputBuffer.startsWith("pulsewidth ")) {
+        // Example: pulsewidth 5000
+        uint32_t width = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "pulsewidth %lu", &width);
+        if (argsParsed == 1) {
+            cmd.type = SIG_CMD_UPDATE_ALL;
+            cmd.pulseWidthUs = width;
+            cmd.paramMode = PARAM_USE_PULSE_WIDTH;
+            commandSent = _engine.sendCommand(cmd);
+            Serial.printf("Setting pulse width to %lu us\n", width);
+        } else {
+            Serial.println("Error: Invalid format. Use: pulsewidth <microseconds>");
+        }
+    } else if (_inputBuffer.startsWith("pulsecount ")) {
+        // Example: pulsecount 1000
+        uint64_t count = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "pulsecount %llu", &count);
+        if (argsParsed == 1) {
+            cmd.type = SIG_CMD_START;
+            cmd.pulseCount = count;
+            cmd.paramMode = PARAM_USE_PULSE_COUNT;
+            commandSent = _engine.sendCommand(cmd);
+            Serial.printf("Setting pulse count to %llu\n", count);
+        } else {
+            Serial.println("Error: Invalid format. Use: pulsecount <count>");
+        }
+    } else if (_inputBuffer.startsWith("channel ")) {
+        // Example: channel 1 19 90 1
+        int channelId = 0, pin = 0, phase = 0, enabled = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "channel %d %d %d %d",
+                                &channelId, &pin, &phase, &enabled);
+        if (argsParsed == 4) {
+            if (channelId >= 1 && channelId <= 5) {
+                cmd.type = SIG_CMD_CONFIG_CHANNEL;
+                cmd.channel = (uint8_t)channelId;
+                cmd.pin = (uint8_t)pin;
+                cmd.phaseOffset = (float)phase;
+                cmd.enabled = (enabled != 0);
+                cmd.paramMode = PARAM_USE_PHASE_DEGREES;
+                commandSent = _engine.sendCommand(cmd);
+                Serial.printf("Configuring channel %d: pin=%d, phase=%d deg, enabled=%s\n",
+                             channelId, pin, phase, enabled ? "yes" : "no");
+            } else {
+                Serial.println("Error: Channel ID must be 1-5 (slave channels)");
+                commandSent = false;
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: channel <id> <pin> <phase> <enabled>");
+        }
+    } else if (_inputBuffer.startsWith("polarity ")) {
+        // Example: polarity h  or  polarity l
+        char polarityChar = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "polarity %c", &polarityChar);
+        if (argsParsed == 1) {
+            cmd.type = SIG_CMD_UPDATE_ALL;
+            bool validPolarity = true;
+            if (polarityChar == 'h' || polarityChar == 'H') {
+                cmd.polarity = POLARITY_ACTIVE_HIGH;
+                Serial.println("Setting polarity to ACTIVE HIGH");
+            } else if (polarityChar == 'l' || polarityChar == 'L') {
+                cmd.polarity = POLARITY_ACTIVE_LOW;
+                Serial.println("Setting polarity to ACTIVE LOW");
+            } else {
+                Serial.println("Error: Polarity must be 'h' (high) or 'l' (low)");
+                validPolarity = false;
+            }
+            if (validPolarity) {
+                commandSent = _engine.sendCommand(cmd);
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: polarity <h|l>");
+        }
+    } else if (_inputBuffer.startsWith("indicator ")) {
+        // Example: indicator 27
+        int pin = 0;
+        int argsParsed = sscanf(_inputBuffer.c_str(), "indicator %d", &pin);
+        if (argsParsed == 1) {
+            cmd.type = SIG_CMD_SET_INDICATOR;
+            cmd.pin = (uint8_t)pin;
+            commandSent = _engine.sendCommand(cmd);
+            if (pin == 0) {
+                Serial.println("Indicator disabled");
+            } else {
+                Serial.printf("Setting indicator pin to GPIO %d\n", pin);
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: indicator <gpio>");
+        }
+    } else if (_inputBuffer == "sync") {
+        cmd.type = SIG_CMD_SYNC;
+        cmd.paramMode = 0;
+        commandSent = _engine.sendCommand(cmd);
+        Serial.println("Triggering multi-channel synchronization");
+    } else if (_inputBuffer == "status") {
+        // Display current status
+        SignalStatus_t status;
+        SignalError err = _engine.getCurrentStatus(status);
+        if (err == SIG_OK) {
+            Serial.println("=== Current Status ===");
+            Serial.printf("  Running: %s\n", status.isRunning ? "YES" : "NO");
+            Serial.printf("  Frequency: %.2f Hz\n", status.frequency);
+            Serial.printf("  Duty Cycle: %.2f%%\n", status.dutyCycle * 100.0);
+            Serial.printf("  Period: %lu us\n", status.periodUs);
+            Serial.printf("  Pulse Width: %lu us\n", status.pulseWidthUs);
+            Serial.printf("  Duration: %.2f s\n", status.lastAppliedDurationSec);
+            Serial.printf("  Output Pin: %d\n", _engine.getOutputPin());
+            Serial.println("======================");
+        } else {
+            Serial.println("Error: Failed to retrieve status");
         }
     } else {
         Serial.printf("Error: Unknown command '%s'\n", _inputBuffer.c_str());
@@ -151,7 +286,7 @@ void SerialCLI::parseAndExecute() {
 
     if (commandSent) {
         Serial.println("OK: Command sent to engine.");
-    } else if (_inputBuffer != "help") { // Don't print error for help command
+    } else if (_inputBuffer != "help" && _inputBuffer != "status") { // Don't print error for help/status commands
         // Error message was printed by sendCommand or parsing logic
         // Consider adding more specific error feedback here if needed
          Serial.println("Error: Failed to send command (queue full? invalid?).");
