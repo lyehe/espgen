@@ -4,8 +4,8 @@
 // Include CliHelpTable definitions if needed
 // extern const CommandDef cliCommands[]; 
 
-SerialCLI::SerialCLI(ISignalController& controller) : 
-    _controller(engine),
+SerialCLI::SerialCLI(ISignalController& controller) :
+    _controller(controller),
     _inputBuffer(""),
     _commandReady(false)
 {

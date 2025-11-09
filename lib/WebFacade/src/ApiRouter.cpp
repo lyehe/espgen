@@ -12,7 +12,7 @@ struct RequestBodyState {
 
 // Constructor
 ApiRouter::ApiRouter(ISignalController& controller, AsyncWebServer& server) :
-    _controller(engine), _server(server) {}
+    _controller(controller), _server(server) {}
 
 // Method to register API routes
 void ApiRouter::registerRoutes() {
