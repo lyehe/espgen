@@ -98,6 +98,16 @@ void SignalEngine::begin() {
     }
     Serial.printf("SignalEngine: Command queue created (size: %d)\n", SIGNAL_ENGINE_CMD_QUEUE_LEN);
 
+    // Create mutex for thread safety
+    _stateMutex = xSemaphoreCreateMutex();
+    if (_stateMutex == NULL) {
+        Serial.println("SignalEngine: CRITICAL - Failed to create state mutex!");
+        Serial.println("SignalEngine: Thread safety NOT enabled - expect data corruption!");
+        // Continue anyway but warn user
+    } else {
+        Serial.println("SignalEngine: State mutex created - thread safety enabled");
+    }
+
     // Initialize the PulseGenerator
     if (!pulseGen.begin()) {
         Serial.println("SignalEngine: Error - Failed to initialize PulseGenerator!");
@@ -150,8 +160,24 @@ void SignalEngine::begin() {
 
 void SignalEngine::loop() {
     // This loop is called from the main application loop.
+    // THREAD SAFETY: Acquire mutex with timeout to avoid blocking main loop
+
+    if (_stateMutex == NULL) {
+        // Mutex not created, skip (already warned in begin())
+        return;
+    }
+
+    // Try to acquire mutex with 10ms timeout
+    if (xSemaphoreTake(_stateMutex, pdMS_TO_TICKS(10)) != pdTRUE) {
+        // Couldn't get lock quickly, skip this iteration
+        return;
+    }
+
+    // === CRITICAL SECTION START ===
+    // All shared variables are now protected
 
     if (!_isRunning) {
+        xSemaphoreGive(_stateMutex);
         return; // Nothing to check if not running
     }
 
@@ -164,6 +190,7 @@ void SignalEngine::loop() {
             // Reset pulse count tracking BEFORE sending stop command
             _requestedPulseCount = 0;
             _usePulseCount = false;
+            xSemaphoreGive(_stateMutex); // Release before sending command
             // Send stop command to self
             SignalCmd stopCmd = { .type = SIG_CMD_STOP };
             sendCommand(stopCmd);
@@ -182,11 +209,17 @@ void SignalEngine::loop() {
             // Reset duration tracking BEFORE sending stop command to prevent race condition
             _requestedDurationSec = 0;
             _durationStartTimeMicros = 0;
+            xSemaphoreGive(_stateMutex); // Release before sending command
             // Send stop command to self
             SignalCmd stopCmd = { .type = SIG_CMD_STOP };
             sendCommand(stopCmd);
+            return;
         }
     }
+
+    // === CRITICAL SECTION END ===
+    xSemaphoreGive(_stateMutex);
+
     // Other non-blocking checks can go here later.
 }
 
@@ -311,18 +344,26 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
             switch (receivedCmd.type) {
                 case SIG_CMD_START:
-                    Serial.println("CmdDispatcherTask: Processing START");
+                    {
+                        Serial.println("CmdDispatcherTask: Processing START");
 
-                    // Update frequency/period (check which mode is being used)
-                    if (receivedCmd.paramMode & PARAM_USE_FREQUENCY) {
-                        engine->_lastAppliedFrequencyHz = receivedCmd.frequencyHz;
-                    } else if (receivedCmd.paramMode & PARAM_USE_PERIOD) {
-                        // Convert period to frequency for internal storage
-                        engine->_lastAppliedFrequencyHz = periodToFreqHz(receivedCmd.periodUs);
-                    } else {
-                        // Default to current frequency if not specified
-                        engine->_lastAppliedFrequencyHz = engine->_currentFrequencyHz;
-                    }
+                        // THREAD SAFETY: Acquire mutex to protect shared state
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreTake(engine->_stateMutex, portMAX_DELAY);
+                        }
+
+                        // === CRITICAL SECTION START ===
+
+                        // Update frequency/period (check which mode is being used)
+                        if (receivedCmd.paramMode & PARAM_USE_FREQUENCY) {
+                            engine->_lastAppliedFrequencyHz = receivedCmd.frequencyHz;
+                        } else if (receivedCmd.paramMode & PARAM_USE_PERIOD) {
+                            // Convert period to frequency for internal storage
+                            engine->_lastAppliedFrequencyHz = periodToFreqHz(receivedCmd.periodUs);
+                        } else {
+                            // Default to current frequency if not specified
+                            engine->_lastAppliedFrequencyHz = engine->_currentFrequencyHz;
+                        }
 
                     // Update duty cycle/pulse width (check which mode is being used)
                     if (receivedCmd.paramMode & PARAM_USE_DUTY_CYCLE) {
@@ -438,15 +479,30 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     stateChanged = true;
                     eventId = SIG_EVT_STARTED; // Specific event ID for start
                     Serial.printf("CmdDispatcherTask: START applied F=%.2f Hz, D=%.2f%% - Running (Start time: %llu us)\n", engine->_currentFrequencyHz, engine->_currentDutyCycle * 100.0, engine->_startTimeMicros);
+
+                        // === CRITICAL SECTION END ===
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreGive(engine->_stateMutex);
+                        }
+                    }
                     break;
 
                 case SIG_CMD_STOP:
-                    Serial.println("CmdDispatcherTask: Processing STOP");
-                    // Calculate final ticks BEFORE resetting state
-                    if (engine->_isRunning) { 
-                        uint64_t cycles_just_elapsed = calculateCycles(engine->_startTimeMicros, esp_timer_get_time(), engine->_currentFrequencyHz);
-                        engine->_accumulatedTicks += cycles_just_elapsed;
-                    }
+                    {
+                        Serial.println("CmdDispatcherTask: Processing STOP");
+
+                        // THREAD SAFETY: Acquire mutex to protect shared state
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreTake(engine->_stateMutex, portMAX_DELAY);
+                        }
+
+                        // === CRITICAL SECTION START ===
+
+                        // Calculate final ticks BEFORE resetting state
+                        if (engine->_isRunning) {
+                            uint64_t cycles_just_elapsed = calculateCycles(engine->_startTimeMicros, esp_timer_get_time(), engine->_currentFrequencyHz);
+                            engine->_accumulatedTicks += cycles_just_elapsed;
+                        }
                     // Set eventData values based on state BEFORE stopping
                     eventData.channel = 0;
                     eventData.current_freq = (uint32_t)engine->_currentFrequencyHz;
@@ -468,49 +524,91 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     eventId = SIG_EVT_STOPPED; // Specific event ID for stop
                     Serial.println("CmdDispatcherTask: STOP applied - Stopped");
                     // Event will be posted after the switch statement using the eventData set above
+
+                        // === CRITICAL SECTION END ===
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreGive(engine->_stateMutex);
+                        }
+                    }
                     break;
 
                  case SIG_CMD_UPDATE_FREQ:
-                     Serial.printf("CmdDispatcherTask: Processing UPDATE_FREQ to %.2f Hz\n", receivedCmd.frequencyHz);
+                     {
+                         Serial.printf("CmdDispatcherTask: Processing UPDATE_FREQ to %.2f Hz\n", receivedCmd.frequencyHz);
 
-                     // CRITICAL: Accumulate ticks with OLD frequency before changing
-                     if (engine->_isRunning && engine->_startTimeMicros > 0) {
-                         uint64_t cycles_just_elapsed = calculateCycles(
-                             engine->_startTimeMicros,
-                             esp_timer_get_time(),
-                             engine->_currentFrequencyHz  // Use OLD frequency for OLD time segment
-                         );
-                         engine->_accumulatedTicks += cycles_just_elapsed;
-                         engine->_startTimeMicros = esp_timer_get_time(); // Reset segment start
-                         Serial.printf("  Accumulated %llu cycles before frequency change\n", cycles_just_elapsed);
+                         // THREAD SAFETY: Acquire mutex to protect shared state
+                         if (engine->_stateMutex != NULL) {
+                             xSemaphoreTake(engine->_stateMutex, portMAX_DELAY);
+                         }
+
+                         // === CRITICAL SECTION START ===
+
+                         // CRITICAL: Accumulate ticks with OLD frequency before changing
+                         if (engine->_isRunning && engine->_startTimeMicros > 0) {
+                             uint64_t cycles_just_elapsed = calculateCycles(
+                                 engine->_startTimeMicros,
+                                 esp_timer_get_time(),
+                                 engine->_currentFrequencyHz  // Use OLD frequency for OLD time segment
+                             );
+                             engine->_accumulatedTicks += cycles_just_elapsed;
+                             engine->_startTimeMicros = esp_timer_get_time(); // Reset segment start
+                             Serial.printf("  Accumulated %llu cycles before frequency change\n", cycles_just_elapsed);
+                         }
+
+                         engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
+                         engine->_currentFrequencyHz = receivedCmd.frequencyHz;
+
+                         if (engine->_isRunning) { // Only trigger event if running
+                             stateChanged = true;
+                             eventId = SIG_EVT_PARAMS_CHANGED;
+                         }
+                         Serial.printf("CmdDispatcherTask: Frequency updated. Running: %s\n", engine->_isRunning ? "true" : "false");
+
+                         // === CRITICAL SECTION END ===
+                         if (engine->_stateMutex != NULL) {
+                             xSemaphoreGive(engine->_stateMutex);
+                         }
                      }
-
-                     engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
-                     engine->_currentFrequencyHz = receivedCmd.frequencyHz;
-
-                     if (engine->_isRunning) { // Only trigger event if running
-                         stateChanged = true;
-                         eventId = SIG_EVT_PARAMS_CHANGED;
-                     }
-                     Serial.printf("CmdDispatcherTask: Frequency updated. Running: %s\n", engine->_isRunning ? "true" : "false");
                      break;
 
                  case SIG_CMD_UPDATE_DUTY:
-                     Serial.printf("CmdDispatcherTask: Processing UPDATE_DUTY to %.2f%%\n", receivedCmd.dutyCycle * 100.0);
-                     engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Update channel 0
-                     engine->_currentDutyCycle = receivedCmd.dutyCycle;
-                     if (engine->_isRunning) { // Only trigger event if running
-                         stateChanged = true;
-                         eventId = SIG_EVT_PARAMS_CHANGED;
+                     {
+                         Serial.printf("CmdDispatcherTask: Processing UPDATE_DUTY to %.2f%%\n", receivedCmd.dutyCycle * 100.0);
+
+                         // THREAD SAFETY: Acquire mutex to protect shared state
+                         if (engine->_stateMutex != NULL) {
+                             xSemaphoreTake(engine->_stateMutex, portMAX_DELAY);
+                         }
+
+                         // === CRITICAL SECTION START ===
+
+                         engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Update channel 0
+                         engine->_currentDutyCycle = receivedCmd.dutyCycle;
+                         if (engine->_isRunning) { // Only trigger event if running
+                             stateChanged = true;
+                             eventId = SIG_EVT_PARAMS_CHANGED;
+                         }
+                         Serial.printf("CmdDispatcherTask: Duty cycle updated. Running: %s\n", engine->_isRunning ? "true" : "false");
+
+                         // === CRITICAL SECTION END ===
+                         if (engine->_stateMutex != NULL) {
+                             xSemaphoreGive(engine->_stateMutex);
+                         }
                      }
-                     Serial.printf("CmdDispatcherTask: Duty cycle updated. Running: %s\n", engine->_isRunning ? "true" : "false");
                      break;
 
                 case SIG_CMD_UPDATE_ALL:
                     { // Start new scope for this case
                         // NOTE: Duration is NOT affected by UPDATE commands
                         Serial.printf("CmdDispatcherTask: Processing UPDATE_ALL F=%.2f Hz, D=%.2f%%\n", receivedCmd.frequencyHz, receivedCmd.dutyCycle * 100.0);
-                        
+
+                        // THREAD SAFETY: Acquire mutex to protect shared state
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreTake(engine->_stateMutex, portMAX_DELAY);
+                        }
+
+                        // === CRITICAL SECTION START ===
+
                         // Accumulate ticks for the segment just ending (only if running)
                         if (engine->_isRunning) {
                             uint64_t cycles_just_elapsed = calculateCycles(engine->_startTimeMicros, esp_timer_get_time(), engine->_currentFrequencyHz);
@@ -544,15 +642,29 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         }
                         stateChanged = true;
                         Serial.printf("CmdDispatcherTask: Parameters updated. Running: %s\n", engine->_isRunning ? "true" : "false");
+
+                        // === CRITICAL SECTION END ===
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreGive(engine->_stateMutex);
+                        }
                     } // End new scope for this case
                     break;
 
                 case SIG_CMD_SET_PIN:
-                    Serial.printf("CmdDispatcherTask: Handling SET_PIN command (Pin: %d)\n", receivedCmd.pin);
-                    // Validate pin number (GPIO 12-19)
-                    if (receivedCmd.pin >= 12 && receivedCmd.pin <= 19) {
-                        if (receivedCmd.pin != engine->_outputPin) {
-                            Serial.printf("CmdDispatcherTask: Pin changed from %d to %d. Applying.\n", engine->_outputPin, receivedCmd.pin);
+                    {
+                        Serial.printf("CmdDispatcherTask: Handling SET_PIN command (Pin: %d)\n", receivedCmd.pin);
+
+                        // THREAD SAFETY: Acquire mutex to protect shared state
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreTake(engine->_stateMutex, portMAX_DELAY);
+                        }
+
+                        // === CRITICAL SECTION START ===
+
+                        // Validate pin number (GPIO 12-19)
+                        if (receivedCmd.pin >= 12 && receivedCmd.pin <= 19) {
+                            if (receivedCmd.pin != engine->_outputPin) {
+                                Serial.printf("CmdDispatcherTask: Pin changed from %d to %d. Applying.\n", engine->_outputPin, receivedCmd.pin);
 
                             // Save the new pin to NVS
                             preferences.begin(DEVICE_CFG_NAMESPACE, false); // Open R/W
@@ -571,10 +683,16 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                             Serial.printf("CmdDispatcherTask: Pin %d is already the current pin. No change needed.\n", receivedCmd.pin);
                         }
                     } else {
-                        Serial.printf("CmdDispatcherTask: Error - Invalid pin %d received. Must be between 12 and 19.\n", receivedCmd.pin);
+                            Serial.printf("CmdDispatcherTask: Error - Invalid pin %d received. Must be between 12 and 19.\n", receivedCmd.pin);
+                        }
+                        // No state change event needed for pin change unless explicitly desired
+                        stateChanged = false; // Prevent default PARAM_CHANGED event
+
+                        // === CRITICAL SECTION END ===
+                        if (engine->_stateMutex != NULL) {
+                            xSemaphoreGive(engine->_stateMutex);
+                        }
                     }
-                    // No state change event needed for pin change unless explicitly desired
-                    stateChanged = false; // Prevent default PARAM_CHANGED event
                     break;
 
                 case SIG_CMD_SET_INDICATOR:

@@ -70,6 +70,9 @@ private:
     QueueHandle_t xQueueCmd;           // Queue for receiving SignalCmd structs
     TaskHandle_t xCmdDispatcherHandle; // Handle for the command dispatcher task
 
+    // Thread safety
+    SemaphoreHandle_t _stateMutex;     // Mutex for protecting shared state variables
+
     // Task function for processing commands
     static void cmdDispatcherTask(void *pvParameters);
 
