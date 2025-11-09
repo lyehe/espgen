@@ -191,24 +191,31 @@ bool PulseGenerator::setDutyCycle(uint8_t channel_id, float duty_cycle) {
     mcpwm_timer_t timer = _timers[channel_id];
     mcpwm_generator_t gen = _generators[channel_id];
 
-    // Convert duty cycle to percentage for MCPWM API
-    float duty_percent = duty_cycle * 100.0;
+    // Apply polarity setting (duty mode)
+    mcpwm_duty_type_t duty_type = (_polarities[channel_id] == POLARITY_ACTIVE_HIGH)
+                                   ? MCPWM_DUTY_MODE_0
+                                   : MCPWM_DUTY_MODE_1;
 
-    esp_err_t err = mcpwm_set_duty(_mcpwm_unit, timer, gen, duty_percent);
-    if (err != ESP_OK) {
-        Serial.printf("PulseGenerator: ERROR - Failed to set duty for channel %d: %s\n",
-                     channel_id, esp_err_to_name(err));
-        return false;
-    }
-
-    err = mcpwm_set_duty_type(_mcpwm_unit, timer, gen, MCPWM_DUTY_MODE_0);
+    esp_err_t err = mcpwm_set_duty_type(_mcpwm_unit, timer, gen, duty_type);
     if (err != ESP_OK) {
         Serial.printf("PulseGenerator: ERROR - Failed to set duty type for channel %d: %s\n",
                      channel_id, esp_err_to_name(err));
         return false;
     }
 
-    Serial.printf("PulseGenerator: Channel %d duty set to %.2f%%\n", channel_id, duty_percent);
+    // Convert duty cycle to percentage for MCPWM API
+    float duty_percent = duty_cycle * 100.0;
+
+    err = mcpwm_set_duty(_mcpwm_unit, timer, gen, duty_percent);
+    if (err != ESP_OK) {
+        Serial.printf("PulseGenerator: ERROR - Failed to set duty for channel %d: %s\n",
+                     channel_id, esp_err_to_name(err));
+        return false;
+    }
+
+    Serial.printf("PulseGenerator: Channel %d duty set to %.2f%% (polarity=%s)\n",
+                 channel_id, duty_percent,
+                 _polarities[channel_id] == POLARITY_ACTIVE_HIGH ? "HIGH" : "LOW");
     return true;
 }
 
@@ -646,9 +653,27 @@ bool PulseGenerator::setPolarity(uint8_t channel_id, SignalPolarity polarity) {
     Serial.printf("PulseGenerator: Channel %d polarity set to %s\n",
                   channel_id, polarity == POLARITY_ACTIVE_HIGH ? "ACTIVE_HIGH" : "ACTIVE_LOW");
 
-    // TODO: Actually implement polarity in MCPWM configuration
-    // This would require changing the MCPWM generator actions
-    Serial.println("PulseGenerator: Warning - Polarity control not yet fully implemented in MCPWM");
+    // Apply polarity to MCPWM hardware if channel is enabled
+    if (_channels[channel_id].enabled) {
+        mcpwm_timer_t timer = _timers[channel_id];
+        mcpwm_generator_t gen = _generators[channel_id];
+
+        // Set duty type based on polarity
+        // MCPWM_DUTY_MODE_0 = Active High (output high during duty cycle)
+        // MCPWM_DUTY_MODE_1 = Active Low (output low during duty cycle)
+        mcpwm_duty_type_t duty_type = (polarity == POLARITY_ACTIVE_HIGH)
+                                       ? MCPWM_DUTY_MODE_0
+                                       : MCPWM_DUTY_MODE_1;
+
+        esp_err_t err = mcpwm_set_duty_type(_mcpwm_unit, timer, gen, duty_type);
+        if (err != ESP_OK) {
+            Serial.printf("PulseGenerator: ERROR - Failed to set polarity for channel %d: %s\n",
+                         channel_id, esp_err_to_name(err));
+            return false;
+        }
+
+        Serial.printf("PulseGenerator: Polarity applied to MCPWM hardware (duty_type=%d)\n", duty_type);
+    }
 
     return true;
 }

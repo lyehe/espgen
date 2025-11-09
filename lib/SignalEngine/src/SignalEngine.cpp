@@ -470,6 +470,9 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         engine->pulseGen.setDutyCycle(0, receivedCmd.dutyCycle); // Apply to channel 0
                     }
 
+                    // Apply polarity if specified in command
+                    engine->pulseGen.setPolarity(0, receivedCmd.polarity);
+
                     engine->pulseGen.start(); // Start all enabled channels
 
                     // Update current state with what was actually applied
