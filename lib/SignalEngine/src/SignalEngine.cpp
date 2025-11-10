@@ -5,17 +5,9 @@
 #include "param_helpers.h"
 #include "esp_event.h"
 #include "esp_timer.h"
-#include <Preferences.h>
-#include "preferences_keys.h"
 
 // Define the event base we declared in signal_iface.h
 ESP_EVENT_DEFINE_BASE(SIGNAL_EVENTS);
-
-// NVS Keys for storing settings
-const char* NVS_NAMESPACE = "SignalEngine";
-const char* NVS_KEY_FREQ = "lastFreq";
-const char* NVS_KEY_DUTY = "lastDuty";
-const char* NVS_KEY_DUR = "lastDur";
 
 // Heartbeat task for debugging
 void heartbeat_task(void *pvParameters) {
@@ -29,9 +21,11 @@ void heartbeat_task(void *pvParameters) {
 SignalEngine::SignalEngine() :
     pulseGen(),
     _state(),
+    _persistence(),
     _initialized(false)
 {
     // State initialization is handled by SignalState constructor
+    // Persistence initialization is handled by SignalPersistence constructor
 }
 
 bool SignalEngine::begin() {
@@ -51,79 +45,23 @@ bool SignalEngine::begin() {
     _state.setRequestedDurationSec(0.0f);
     _state.setDurationStartTimeMicros(0);
 
-    // --- Load Settings from NVS ---
-    Preferences preferences;
-    double loadedFreq = DEFAULT_FREQUENCY_HZ;
-    float loadedDuty = DEFAULT_DUTY_CYCLE;
-    float loadedDur = 0.0f;
+    // --- Load Settings from NVS using SignalPersistence ---
+    Serial.println("SignalEngine: Loading settings from NVS...");
+    SignalSettings settings = _persistence.loadSettings();
 
-    if (!preferences.begin(NVS_NAMESPACE, false)) {
-        Serial.printf("SignalEngine: ERROR - Failed to open NVS namespace '%s'\n", NVS_NAMESPACE);
-        Serial.println("SignalEngine: Using default values for all settings");
-        // Values already set to defaults above
-    } else {
-        // Load values, using compile-time defaults if not found
-        loadedFreq = preferences.getDouble(NVS_KEY_FREQ, DEFAULT_FREQUENCY_HZ);
-        loadedDuty = preferences.getFloat(NVS_KEY_DUTY, DEFAULT_DUTY_CYCLE);
-        loadedDur = preferences.getFloat(NVS_KEY_DUR, 0.0f); // Default duration is 0 (infinite)
-        preferences.end(); // Close SignalEngine namespace
+    // If no valid settings were loaded, use defaults (already set by loadSettings)
+    if (!settings.valid) {
+        Serial.println("SignalEngine: WARNING - Using default settings (NVS not accessible)");
     }
 
-    // Validate loaded values from SignalEngine namespace
-    if (!isValidFrequency(loadedFreq)) {
-        Serial.printf("SignalEngine: WARNING - Invalid frequency %.2f Hz in NVS, using default %.2f Hz\n",
-                     loadedFreq, DEFAULT_FREQUENCY_HZ);
-        loadedFreq = DEFAULT_FREQUENCY_HZ;
-    }
+    // Apply loaded/default settings to internal state via SignalState
+    _state.setCurrentFrequencyHz(settings.frequencyHz);
+    _state.setCurrentDutyCycle(settings.dutyCycle);
+    _state.setLastAppliedFrequencyHz(settings.frequencyHz);
+    _state.setLastAppliedDutyCycle(settings.dutyCycle);
+    _state.setLastAppliedDurationSec(settings.durationSec);
+    _state.setOutputPin(settings.outputPin);
 
-    if (!isValidDutyCycle(loadedDuty)) {
-        Serial.printf("SignalEngine: WARNING - Invalid duty cycle %.2f in NVS, using default %.2f\n",
-                     loadedDuty, DEFAULT_DUTY_CYCLE);
-        loadedDuty = DEFAULT_DUTY_CYCLE;
-    }
-
-    if (!isValidDuration(loadedDur)) {
-        Serial.printf("SignalEngine: WARNING - Invalid duration %.2f s in NVS, using default 0.0s\n",
-                     loadedDur);
-        loadedDur = 0.0f;
-    }
-
-    // --- Load device config (including pin) ---
-    int loadedPin = DEFAULT_OUTPUT_PIN;
-    if (!preferences.begin(DEVICE_CFG_NAMESPACE, false)) {
-        Serial.printf("SignalEngine: ERROR - Failed to open NVS namespace '%s'\n", DEVICE_CFG_NAMESPACE);
-        Serial.printf("SignalEngine: Using default pin %d\n", DEFAULT_OUTPUT_PIN);
-        loadedPin = DEFAULT_OUTPUT_PIN;
-    } else {
-        // Validate loaded pin using new validation helper
-        loadedPin = preferences.getUChar(OUTPUT_PIN_KEY, DEFAULT_OUTPUT_PIN);
-        preferences.end(); // Close device config namespace
-
-        if (!isValidOutputPin(loadedPin)) {
-            Serial.printf("SignalEngine: ERROR - Invalid pin %d loaded from NVS. Using default %d.\n",
-                         loadedPin, DEFAULT_OUTPUT_PIN);
-            loadedPin = DEFAULT_OUTPUT_PIN;
-
-            // Save corrected pin back to NVS
-            if (preferences.begin(DEVICE_CFG_NAMESPACE, false)) {
-                preferences.putUChar(OUTPUT_PIN_KEY, loadedPin);
-                preferences.end();
-                Serial.println("SignalEngine: Corrected pin saved to NVS");
-            }
-        }
-    }
-    _state.setOutputPin(loadedPin);
-    Serial.printf(" - Loaded Output Pin: %d (Namespace: %s, Key: %s)\n", _state.getOutputPin(), DEVICE_CFG_NAMESPACE, OUTPUT_PIN_KEY);
-
-    Serial.printf(" - Loaded Freq/Duty: F=%.2f Hz, D=%.2f%%, Dur=%.2f s\n",
-                  loadedFreq, loadedDuty * 100.0, loadedDur);
-
-    // Apply validated settings to internal state via SignalState
-    _state.setCurrentFrequencyHz(loadedFreq);
-    _state.setCurrentDutyCycle(loadedDuty);
-    _state.setLastAppliedFrequencyHz(loadedFreq);
-    _state.setLastAppliedDutyCycle(loadedDuty);
-    _state.setLastAppliedDurationSec(loadedDur);
     // _isRunning remains false initially (SignalState default)
     // _requestedDurationSec will be set by START command
     // --- End Load Settings --- 
@@ -408,7 +346,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
     SignalEngine* engine = static_cast<SignalEngine*>(pvParameters);
     SignalCmd receivedCmd;
     SignalEvtData eventData; // Structure to hold event data
-    Preferences preferences; // Declare Preferences object outside loop for efficiency
+    // Note: Preferences/NVS now handled by SignalPersistence
 
     Serial.println("CmdDispatcherTask: Starting loop.");
 
@@ -481,14 +419,20 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                                 Serial.printf(", Dur=%.2f s\n", engine->_state.getLastAppliedDurationSec_nolock());
                             }
 
-                            // --- Save Settings to NVS ---
-                            preferences.begin(NVS_NAMESPACE, false);
-                            preferences.putDouble(NVS_KEY_FREQ, engine->_state.getLastAppliedFrequencyHz_nolock());
-                            preferences.putFloat(NVS_KEY_DUTY, engine->_state.getLastAppliedDutyCycle_nolock());
-                            preferences.putFloat(NVS_KEY_DUR, engine->_state.getLastAppliedDurationSec_nolock());
-                            preferences.end();
-                            Serial.println(" - Saved settings to NVS.");
-                            // --- End Save Settings ---
+                            // Note: NVS saving happens outside atomicUpdate to avoid blocking mutex
+                        });
+
+                        // --- Save Settings to NVS using SignalPersistence (outside critical section) ---
+                        engine->_persistence.saveSignalParams(
+                            engine->_state.getLastAppliedFrequencyHz(),
+                            engine->_state.getLastAppliedDutyCycle(),
+                            engine->_state.getLastAppliedDurationSec()
+                        );
+                        // --- End Save Settings ---
+
+                        // Re-enter atomicUpdate for the rest of START command
+                        engine->_state.atomicUpdate([&]() {
+                            // Continue with START command logic...
 
                             if (!engine->_state.isRunning_nolock()) { // Record start time only if starting from stopped state
                                  engine->_state.resetAccumulatedTicks_nolock(); // Reset accumulator on new start
@@ -725,13 +669,6 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                                     Serial.printf("CmdDispatcherTask: Pin changed from %d to %d. Applying.\n",
                                                   engine->_state.getOutputPin_nolock(), receivedCmd.pin);
 
-                                    // Save the new pin to NVS
-                                    preferences.begin(DEVICE_CFG_NAMESPACE, false); // Open R/W
-                                    preferences.putUChar(OUTPUT_PIN_KEY, receivedCmd.pin);
-                                    preferences.end();
-                                    Serial.printf(" - Saved pin %d to NVS (Namespace: %s, Key: %s)\n",
-                                                  receivedCmd.pin, DEVICE_CFG_NAMESPACE, OUTPUT_PIN_KEY);
-
                                     // Update the engine's internal state
                                     engine->_state.setOutputPin_nolock(receivedCmd.pin);
 
@@ -751,6 +688,11 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                             // No state change event needed for pin change unless explicitly desired
                             stateChanged = false; // Prevent default PARAM_CHANGED event
                         });
+
+                        // Save pin to NVS outside critical section
+                        if (isValidOutputPin(receivedCmd.pin)) {
+                            engine->_persistence.saveOutputPin(receivedCmd.pin);
+                        }
                     }
                     break;
 

@@ -3,6 +3,7 @@
 
 #include "PulseGenerator.h"
 #include "SignalState.h"
+#include "SignalPersistence.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -54,6 +55,9 @@ private:
 
     // Centralized state management with thread safety
     SignalState _state;
+
+    // Persistent storage management
+    SignalPersistence _persistence;
 
     // Initialization state
     bool _initialized;
