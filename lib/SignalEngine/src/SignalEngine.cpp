@@ -22,10 +22,12 @@ SignalEngine::SignalEngine() :
     pulseGen(),
     _state(),
     _persistence(),
+    _timingController(),
     _initialized(false)
 {
     // State initialization is handled by SignalState constructor
     // Persistence initialization is handled by SignalPersistence constructor
+    // Timing initialization is handled by TimingController constructor
 }
 
 bool SignalEngine::begin() {
@@ -138,71 +140,14 @@ bool SignalEngine::begin() {
 
 void SignalEngine::loop() {
     // This loop is called from the main application loop.
-    // THREAD SAFETY: All state access goes through SignalState which handles mutex
+    // Check for auto-stop conditions using TimingController
 
-    bool shouldAutoStop = false; // Track if auto-stop should be triggered
-
-    // Use atomic operation to check multiple state values and perform auto-stop logic
-    _state.atomicUpdate([this, &shouldAutoStop]() {
-        if (!_state.isRunning_nolock()) {
-            return; // Nothing to check if not running
-        }
-
-        // Check for pulse count limit (if using pulse count mode)
-        if (_state.isUsingPulseCount_nolock() && _state.getRequestedPulseCount_nolock() > 0) {
-            // Calculate current pulses directly (already inside critical section)
-            uint64_t currentCycles = 0;
-            uint64_t startTime = _state.getStartTimeMicros_nolock();
-            if (startTime > 0) {
-                currentCycles = calculateCycles(startTime, esp_timer_get_time(), _state.getCurrentFrequencyHz_nolock());
-            }
-            uint64_t currentPulses = _state.getAccumulatedTicks_nolock() + currentCycles;
-
-            if (currentPulses >= _state.getRequestedPulseCount_nolock()) {
-                Serial.printf("SignalEngine: Pulse count (%llu) reached. Auto-stopping.\n", _state.getRequestedPulseCount_nolock());
-                // Reset pulse count tracking BEFORE sending stop command
-                _state.setRequestedPulseCount_nolock(0);
-                _state.setUsingPulseCount_nolock(false);
-                shouldAutoStop = true;
-                return; // Exit early, don't check duration
-            }
-        }
-
-        // Check for timed stop if duration is set (only if not using pulse count)
-        if (!_state.isUsingPulseCount_nolock() && _state.getRequestedDurationSec_nolock() > 0 && _state.getDurationStartTimeMicros_nolock() > 0) {
-            uint64_t nowMicros = esp_timer_get_time();
-
-            // Convert duration to microseconds with overflow protection
-            // Max safe duration: UINT64_MAX / 1000000 = ~18446744073 seconds = ~584 years
-            double durationMicrosDouble = _state.getRequestedDurationSec_nolock() * 1000000.0;
-            uint64_t targetDurationMicros;
-            const double MAX_UINT64_AS_DOUBLE = 18446744073709551615.0;
-
-            if (durationMicrosDouble >= MAX_UINT64_AS_DOUBLE) {
-                targetDurationMicros = UINT64_MAX;
-            } else if (durationMicrosDouble < 0) {
-                targetDurationMicros = 0;
-            } else {
-                targetDurationMicros = (uint64_t)durationMicrosDouble;
-            }
-
-            uint64_t elapsedMicros = nowMicros - _state.getDurationStartTimeMicros_nolock();
-
-            if (elapsedMicros >= targetDurationMicros) {
-                Serial.printf("SignalEngine: Duration (%.2f s) expired. Auto-stopping.\n", _state.getRequestedDurationSec_nolock());
-                // Reset duration tracking BEFORE sending stop command to prevent race condition
-                _state.setRequestedDurationSec_nolock(0);
-                _state.setDurationStartTimeMicros_nolock(0);
-                shouldAutoStop = true;
-            }
-        }
-    });
-
-    // Send stop command outside the critical section if auto-stop was triggered
-    if (shouldAutoStop) {
+    // TimingController handles all timeout logic and state updates
+    bool timeoutTriggered = _timingController.checkTimeouts(_state, [this]() {
+        // Callback invoked when timeout detected - send STOP command
         SignalCmd stopCmd = { .type = SIG_CMD_STOP };
         sendCommand(stopCmd);
-    }
+    });
 
     // Other non-blocking checks can go here later.
 }
@@ -264,49 +209,9 @@ SignalError SignalEngine::getCurrentStatus(SignalStatus_t& status) {
     return SIG_OK;
 }
 
-// Helper function to calculate cycles based on time and frequency
-static uint64_t calculateCycles(uint64_t startMicros, uint64_t endMicros, double frequencyHz) {
-    if (endMicros <= startMicros || frequencyHz <= 0) {
-        return 0;
-    }
-
-    uint64_t elapsedTimeMicros = endMicros - startMicros;
-    double elapsedSeconds = (double)elapsedTimeMicros / 1000000.0;
-    double cycles = elapsedSeconds * frequencyHz;
-
-    // Check for overflow: UINT64_MAX = 18446744073709551615
-    // If cycles would overflow, clamp to UINT64_MAX
-    const double MAX_UINT64_AS_DOUBLE = 18446744073709551615.0;
-    if (cycles >= MAX_UINT64_AS_DOUBLE) {
-        return UINT64_MAX;
-    }
-
-    // Check for negative (shouldn't happen but safety check)
-    if (cycles < 0) {
-        return 0;
-    }
-
-    return (uint64_t)cycles;
-}
-
 uint64_t SignalEngine::getEstimatedCycleCount() const {
-    uint64_t result = 0;
-
-    // Use atomicUpdate to read multiple state values consistently
-    _state.atomicUpdate([this, &result]() {
-        if (_state.isRunning_nolock() && _state.getStartTimeMicros_nolock() > 0) {
-            uint64_t currentCycles = calculateCycles(
-                _state.getStartTimeMicros_nolock(),
-                esp_timer_get_time(),
-                _state.getCurrentFrequencyHz_nolock()
-            );
-            result = _state.getAccumulatedTicks_nolock() + currentCycles;
-        } else {
-            result = _state.getAccumulatedTicks_nolock();
-        }
-    });
-
-    return result;
+    // Delegate to TimingController
+    return _timingController.getEstimatedCycleCount(_state);
 }
 
 // --- Last Applied Parameter Getters Implementation ---
@@ -440,7 +345,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                             } else {
                                 // If already running, treat START like an UPDATE_ALL to apply new params
                                 // Accumulate ticks from the current segment first
-                                uint64_t cycles_just_elapsed = calculateCycles(
+                                uint64_t cycles_just_elapsed = engine->_timingController.calculateCycles(
                                     engine->_state.getStartTimeMicros_nolock(),
                                     esp_timer_get_time(),
                                     engine->_state.getCurrentFrequencyHz_nolock()
@@ -522,15 +427,8 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
                         // THREAD SAFETY: Use SignalState atomicUpdate
                         engine->_state.atomicUpdate([&]() {
-                            // Calculate final ticks BEFORE resetting state
-                            if (engine->_state.isRunning_nolock()) {
-                                uint64_t cycles_just_elapsed = calculateCycles(
-                                    engine->_state.getStartTimeMicros_nolock(),
-                                    esp_timer_get_time(),
-                                    engine->_state.getCurrentFrequencyHz_nolock()
-                                );
-                                engine->_state.addAccumulatedTicks_nolock(cycles_just_elapsed);
-                            }
+                            // Let TimingController handle final accumulation
+                            engine->_timingController.onStop(engine->_state);
 
                             // Set eventData values based on state BEFORE stopping
                             eventData.channel = 0;
@@ -565,17 +463,9 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
                          // THREAD SAFETY: Use SignalState atomicUpdate
                          engine->_state.atomicUpdate([&]() {
-                             // CRITICAL: Accumulate ticks with OLD frequency before changing
-                             if (engine->_state.isRunning_nolock() && engine->_state.getStartTimeMicros_nolock() > 0) {
-                                 uint64_t cycles_just_elapsed = calculateCycles(
-                                     engine->_state.getStartTimeMicros_nolock(),
-                                     esp_timer_get_time(),
-                                     engine->_state.getCurrentFrequencyHz_nolock()  // Use OLD frequency for OLD time segment
-                                 );
-                                 engine->_state.addAccumulatedTicks_nolock(cycles_just_elapsed);
-                                 engine->_state.setStartTimeMicros_nolock(esp_timer_get_time()); // Reset segment start
-                                 Serial.printf("  Accumulated %llu cycles before frequency change\n", cycles_just_elapsed);
-                             }
+                             // Let TimingController handle frequency change accumulation
+                             double oldFrequency = engine->_state.getCurrentFrequencyHz_nolock();
+                             engine->_timingController.onFrequencyChange(engine->_state, oldFrequency);
 
                              engine->pulseGen.setFrequency(receivedCmd.frequencyHz);
                              engine->_state.setCurrentFrequencyHz_nolock(receivedCmd.frequencyHz);
@@ -617,7 +507,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                         engine->_state.atomicUpdate([&]() {
                             // Accumulate ticks for the segment just ending (only if running)
                             if (engine->_state.isRunning_nolock()) {
-                                uint64_t cycles_just_elapsed = calculateCycles(
+                                uint64_t cycles_just_elapsed = engine->_timingController.calculateCycles(
                                     engine->_state.getStartTimeMicros_nolock(),
                                     esp_timer_get_time(),
                                     engine->_state.getCurrentFrequencyHz_nolock()

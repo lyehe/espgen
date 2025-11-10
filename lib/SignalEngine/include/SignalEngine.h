@@ -4,6 +4,7 @@
 #include "PulseGenerator.h"
 #include "SignalState.h"
 #include "SignalPersistence.h"
+#include "TimingController.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -58,6 +59,9 @@ private:
 
     // Persistent storage management
     SignalPersistence _persistence;
+
+    // Timing and pulse counting management
+    TimingController _timingController;
 
     // Initialization state
     bool _initialized;
