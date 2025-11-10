@@ -23,11 +23,13 @@ SignalEngine::SignalEngine() :
     _state(),
     _persistence(),
     _timingController(),
+    _eventPublisher(),
     _initialized(false)
 {
     // State initialization is handled by SignalState constructor
     // Persistence initialization is handled by SignalPersistence constructor
     // Timing initialization is handled by TimingController constructor
+    // Event publishing initialization is handled by SignalEventPublisher constructor
 }
 
 bool SignalEngine::begin() {
@@ -267,6 +269,7 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
 
             bool stateChanged = false;
             SigEvtId eventId = SIG_EVT_PARAMS_CHANGED; // Default event ID
+            uint64_t finalTicks = 0; // For STOP events - preserve final tick count
 
             switch (receivedCmd.type) {
                 case SIG_CMD_START:
@@ -446,6 +449,9 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                             engine->_state.setUsingPulseCount_nolock(false); // Reset mode flag
                             engine->_state.resetAccumulatedTicks_nolock(); // Reset accumulator AFTER getting final value
                         });
+
+                        // Save final ticks before they're reset (for event publishing)
+                        finalTicks = eventData.current_ticks;
 
                         // Stop hardware outside critical section
                         engine->pulseGen.stop();
@@ -633,30 +639,32 @@ void SignalEngine::cmdDispatcherTask(void *pvParameters) {
                     break;
             }
 
-            // If state changed, post an event
+            // If state changed, post an event using SignalEventPublisher
             if (stateChanged) {
-                // For START/UPDATE, eventData is set here
-                // For STOP, eventData was set inside the case block
-                if (eventId != SIG_EVT_STOPPED) {
-                    eventData.channel = 0; // Hardcode channel 0 for now
-                    eventData.current_freq = (uint32_t)engine->_state.getCurrentFrequencyHz();
-                    eventData.current_duty = engine->_state.getCurrentDutyCycle();
-                    eventData.duration_sec = engine->_state.getLastAppliedDurationSec(); // Populate duration for START/UPDATE
-                    eventData.current_ticks = engine->getEstimatedCycleCount(); // Populate with calculated cycles
-                }
-                // Always include the current pin in the event data
-                eventData.output_pin = engine->_state.getOutputPin();
+                bool eventPosted = false;
 
-                // Post the event to the default event loop with timeout
-                const TickType_t EVENT_POST_TIMEOUT_MS = 100; // 100ms timeout
-                esp_err_t post_err = esp_event_post(SIGNAL_EVENTS, eventId, &eventData, sizeof(eventData),
-                                                    pdMS_TO_TICKS(EVENT_POST_TIMEOUT_MS));
-                if (post_err == ESP_ERR_TIMEOUT) {
-                    Serial.printf("WARNING: Event queue full, event %d dropped\n", eventId);
-                } else if (post_err != ESP_OK) {
-                    Serial.printf("ERROR: Failed to post event %d: %s\n", eventId, esp_err_to_name(post_err));
-                } else {
-                    Serial.printf("Posted event: Base=%s, ID=%d\n", "SIGNAL_EVENTS", eventId);
+                switch (eventId) {
+                    case SIG_EVT_STARTED:
+                        eventPosted = engine->_eventPublisher.publishStarted(engine->_state);
+                        break;
+
+                    case SIG_EVT_STOPPED:
+                        // For STOP, eventData.current_ticks was set in the STOP handler
+                        // Use the finalTicks value we saved
+                        eventPosted = engine->_eventPublisher.publishStopped(engine->_state, finalTicks);
+                        break;
+
+                    case SIG_EVT_PARAMS_CHANGED:
+                        eventPosted = engine->_eventPublisher.publishParamsChanged(engine->_state);
+                        break;
+
+                    default:
+                        Serial.printf("WARNING: Unknown event ID %d\n", eventId);
+                        break;
+                }
+
+                if (!eventPosted) {
+                    Serial.printf("WARNING: Failed to post event %d\n", eventId);
                 }
             }
         }

@@ -5,6 +5,7 @@
 #include "SignalState.h"
 #include "SignalPersistence.h"
 #include "TimingController.h"
+#include "SignalEventPublisher.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -63,6 +64,9 @@ private:
     // Timing and pulse counting management
     TimingController _timingController;
 
+    // ESP event publishing
+    SignalEventPublisher _eventPublisher;
+
     // Initialization state
     bool _initialized;
 
@@ -71,8 +75,6 @@ private:
 
     // Task function for processing commands
     static void cmdDispatcherTask(void *pvParameters);
-
-    // Add event posting mechanism later
 }; // End of SignalEngine class definition
 
 #endif // SIGNAL_ENGINE_H 
