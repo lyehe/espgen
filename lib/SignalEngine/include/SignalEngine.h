@@ -2,6 +2,7 @@
 #define SIGNAL_ENGINE_H
 
 #include "PulseGenerator.h"
+#include "SignalState.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -51,36 +52,14 @@ private:
     // Multi-channel pulse generator (MCPWM-based)
     PulseGenerator pulseGen;
 
+    // Centralized state management with thread safety
+    SignalState _state;
+
     // Initialization state
     bool _initialized;
 
-    // Current signal state
-    double _currentFrequencyHz;
-    float _currentDutyCycle;
-    bool _isRunning;
-    uint64_t _startTimeMicros; // Timestamp (us) when current segment started
-    uint64_t _accumulatedTicks; // Ticks accumulated before the current segment
-
-    // Duration/Count Tracking (use one or the other)
-    float _requestedDurationSec;    // Requested duration for current run (0 = infinite)
-    uint64_t _requestedPulseCount;  // Requested pulse count (0 = infinite, overrides duration)
-    uint64_t _durationStartTimeMicros; // Start time for duration measurement (us)
-    bool _usePulseCount;            // True if using pulse count, false if using duration
-
-    // State for last applied parameters (used by button)
-    double _lastAppliedFrequencyHz;
-    float _lastAppliedDutyCycle;
-    float _lastAppliedDurationSec;
-    uint64_t _lastAppliedPulseCount;
-
-    // Legacy: Keep track of primary output pin for compatibility
-    int _outputPin;
-
     QueueHandle_t xQueueCmd;           // Queue for receiving SignalCmd structs
     TaskHandle_t xCmdDispatcherHandle; // Handle for the command dispatcher task
-
-    // Thread safety
-    mutable SemaphoreHandle_t _stateMutex;     // Mutex for protecting shared state variables (mutable for const getters)
 
     // Task function for processing commands
     static void cmdDispatcherTask(void *pvParameters);
