@@ -1,9 +1,19 @@
 #include <unity.h>
+
+// Include mocks FIRST so they override real headers
 #include "mocks/mocks.h"
 
-// Must be included after mocks to use mock implementations
+// Now include the headers
 #include "SignalState.h"
 #include "TimingController.h"
+
+// Include mock implementations
+#include "../mocks/mocks.cpp"
+
+// Directly include the source files we're testing (to avoid library auto-build issues)
+// This way we only compile what we need for this test
+#include "../../lib/SignalEngine/src/SignalState.cpp"
+#include "../../lib/SignalEngine/src/TimingController.cpp"
 
 // Global mock time for esp_timer_get_time()
 static uint64_t g_mockTimeMicros = 0;
@@ -177,15 +187,15 @@ void test_onStop_accumulates_cycles() {
     TimingController tc;
     state.begin();
 
-    // Start at time 0 with 10 Hz
-    setMockTime(0);
+    // Start at time 100ms with 10 Hz
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
     state.setAccumulatedTicks(0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, true); // Sets start time to current mock time (100000)
 
-    // Stop after 1 second (should have 10 cycles)
-    setMockTime(1000000);
+    // Stop after 1 second more (should have 10 cycles)
+    setMockTime(1100000);  // 100000 + 1000000
     tc.onStop(state);
 
     // Should accumulate 10 cycles and reset start time
@@ -203,11 +213,11 @@ void test_onStop_adds_to_existing_accumulator() {
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
 
-    setMockTime(0);
-    state.setStartTimeMicros(0);
+    setMockTime(100000);
+    tc.onStart(state, false); // Sets start time, preserves accumulator
 
     // Stop after 1 second (10 more cycles)
-    setMockTime(1000000);
+    setMockTime(1100000);  // 100000 + 1000000
     tc.onStop(state);
 
     // Should have 50 + 10 = 60 cycles
@@ -220,20 +230,20 @@ void test_onFrequencyChange_accumulates_with_old_frequency() {
     state.begin();
 
     // Start at time 0 with 10 Hz
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
     state.setAccumulatedTicks(0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, true); // Sets start time to current mock time
 
     // Change frequency after 1 second (should accumulate 10 cycles at old frequency)
-    setMockTime(1000000);
+    setMockTime(1100000);  // 100000 + 1000000
     double oldFreq = 10.0;
     tc.onFrequencyChange(state, oldFreq);
 
     // Should accumulate 10 cycles and reset start time to current time
     TEST_ASSERT_EQUAL_UINT64(10, state.getAccumulatedTicks());
-    TEST_ASSERT_EQUAL_UINT64(1000000, state.getStartTimeMicros());
+    TEST_ASSERT_EQUAL_UINT64(1100000, state.getStartTimeMicros());
 }
 
 void test_onFrequencyChange_uses_old_frequency_correctly() {
@@ -242,15 +252,15 @@ void test_onFrequencyChange_uses_old_frequency_correctly() {
     state.begin();
 
     // Start at 5 Hz
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(5.0); // Current is 5 Hz
     state.setAccumulatedTicks(0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, true); // Sets start time to current mock time
 
     // After 1 second, frequency changes to 20 Hz
     // But we need to count cycles at OLD frequency (5 Hz)
-    setMockTime(1000000);
+    setMockTime(1100000);  // 100000 + 1000000
     double oldFreq = 5.0; // OLD frequency
     state.setCurrentFrequencyHz(20.0); // Update to new frequency
     tc.onFrequencyChange(state, oldFreq);
@@ -281,14 +291,14 @@ void test_getEstimatedCycleCount_when_running() {
     state.begin();
 
     // Start at time 0 with 10 Hz, 50 accumulated ticks
-    setMockTime(0);
+    setMockTime(100000);
     state.setAccumulatedTicks(50);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, false); // Sets start time, preserves accumulator
 
     // Advance to 1 second (10 more cycles)
-    setMockTime(1000000);
+    setMockTime(1100000);  // 100000 + 1000000
 
     uint64_t count = tc.getEstimatedCycleCount(state);
     // Should be 50 (accumulated) + 10 (current segment) = 60
@@ -367,14 +377,14 @@ void test_checkTimeouts_duration_expired() {
     state.begin();
 
     // Start with 1 second duration
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setRequestedDurationSec(1.0);
-    state.setDurationStartTimeMicros(0);
+    state.setDurationStartTimeMicros(esp_timer_get_time());
     state.setUsingPulseCount(false);
 
     // Check after 1.5 seconds (expired)
-    setMockTime(1500000);
+    setMockTime(1600000);  // 100000 + 1500000
 
     bool timeoutCalled = false;
     bool result = tc.checkTimeouts(state, [&timeoutCalled]() {
@@ -395,14 +405,14 @@ void test_checkTimeouts_duration_exactly_expired() {
     state.begin();
 
     // Start with 1 second duration
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setRequestedDurationSec(1.0);
-    state.setDurationStartTimeMicros(0);
+    state.setDurationStartTimeMicros(esp_timer_get_time());
     state.setUsingPulseCount(false);
 
     // Check after exactly 1 second
-    setMockTime(1000000);
+    setMockTime(1100000);  // 100000 + 1000000
 
     bool timeoutCalled = false;
     bool result = tc.checkTimeouts(state, [&timeoutCalled]() {
@@ -474,16 +484,16 @@ void test_checkTimeouts_pulse_count_reached() {
     state.begin();
 
     // Start with 50 pulse target at 10 Hz
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
     state.setAccumulatedTicks(0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, true); // Sets start time to current mock time
     state.setRequestedPulseCount(50);
     state.setUsingPulseCount(true);
 
     // After 5 seconds = 50 pulses (reached)
-    setMockTime(5000000);
+    setMockTime(5100000);  // 100000 + 5000000
 
     bool timeoutCalled = false;
     bool result = tc.checkTimeouts(state, [&timeoutCalled]() {
@@ -504,16 +514,16 @@ void test_checkTimeouts_pulse_count_exceeded() {
     state.begin();
 
     // Start with 30 pulse target at 10 Hz
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
     state.setAccumulatedTicks(0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, true); // Sets start time to current mock time
     state.setRequestedPulseCount(30);
     state.setUsingPulseCount(true);
 
     // After 5 seconds = 50 pulses (exceeded target)
-    setMockTime(5000000);
+    setMockTime(5100000);  // 100000 + 5000000
 
     bool timeoutCalled = false;
     bool result = tc.checkTimeouts(state, [&timeoutCalled]() {
@@ -530,16 +540,16 @@ void test_checkTimeouts_pulse_count_with_accumulator() {
     state.begin();
 
     // Start with 100 accumulated ticks, target 120 at 10 Hz
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
     state.setAccumulatedTicks(100); // Already have 100
-    state.setStartTimeMicros(0);
+    tc.onStart(state, false); // Sets start time, preserves accumulator
     state.setRequestedPulseCount(120);
     state.setUsingPulseCount(true);
 
     // After 1 second = 10 more pulses (100 + 10 = 110, not reached)
-    setMockTime(1000000);
+    setMockTime(1100000);  // 100000 + 1000000
 
     bool timeoutCalled = false;
     bool result = tc.checkTimeouts(state, [&timeoutCalled]() {
@@ -550,7 +560,7 @@ void test_checkTimeouts_pulse_count_with_accumulator() {
     TEST_ASSERT_FALSE(timeoutCalled);
 
     // After 3 seconds total = 30 more pulses (100 + 30 = 130, reached)
-    setMockTime(3000000);
+    setMockTime(3100000);  // 100000 + 3000000
 
     result = tc.checkTimeouts(state, [&timeoutCalled]() {
         timeoutCalled = true;
@@ -594,18 +604,18 @@ void test_checkTimeouts_pulse_count_has_priority_over_duration() {
     state.begin();
 
     // Set both pulse count (will expire first) and duration
-    setMockTime(0);
+    setMockTime(100000);
     state.setRunning(true);
     state.setCurrentFrequencyHz(10.0);
     state.setAccumulatedTicks(0);
-    state.setStartTimeMicros(0);
+    tc.onStart(state, true); // Sets start time to current mock time
     state.setRequestedPulseCount(50); // 5 seconds at 10 Hz
     state.setUsingPulseCount(true);
     state.setRequestedDurationSec(10.0); // 10 seconds
-    state.setDurationStartTimeMicros(0);
+    state.setDurationStartTimeMicros(esp_timer_get_time());
 
     // After 5 seconds, pulse count is reached but duration is not
-    setMockTime(5000000);
+    setMockTime(5100000);  // 100000 + 5000000
 
     bool timeoutCalled = false;
     bool result = tc.checkTimeouts(state, [&timeoutCalled]() {

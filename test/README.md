@@ -113,53 +113,51 @@ platformio test -e native -v
 
 ## Current Status
 
-### ✅ Completed
+### ✅ All Tests Passing!
+
+**27/27 tests passing** for TimingController
 
 1. PlatformIO native test environment configured
 2. Comprehensive mock infrastructure created
-3. 27 test cases for TimingController written
+3. 27 test cases for TimingController written and **all passing**
 4. Mock headers for all ESP32 dependencies
+5. Build conflicts resolved using direct source inclusion
+6. Test timing issues fixed (non-zero start times)
 
-### ⚠️ Known Issues
+### 🎉 Resolution Implemented
 
-**Build Conflicts**: The current setup has compilation conflicts between:
-- Real library headers (PulseGenerator.h)
-- Mock definitions (mocks.h)
+**Approach Used: Direct Source Inclusion** (Option 3 variant)
 
-Both are being included during compilation, causing:
-- Duplicate type definitions (`PulseChannelConfig_t`)
-- Class vs typedef conflicts (`PulseGenerator`)
+The build conflicts were resolved by:
 
-### 🔧 Resolution Options
+1. **Disabled automatic library building**: Set `lib_ignore = SignalEngine` in platformio.ini
+2. **Direct source inclusion**: Test files directly include only the `.cpp` files they need:
+   ```cpp
+   #include "../mocks/mocks.cpp"
+   #include "../../lib/SignalEngine/src/SignalState.cpp"
+   #include "../../lib/SignalEngine/src/TimingController.cpp"
+   ```
+3. **Explicit dependency control**: Using `lib_ldf_mode = chain+` to find Unity but not auto-build libraries
 
-**Option 1: Conditional Compilation in Real Headers** (Recommended)
-Add to `lib/SignalEngine/include/PulseGenerator.h`:
-```cpp
-#ifdef NATIVE_TEST
-// For native tests, use mock from mocks.h
-#include "mocks.h"
-#else
-// Real implementation
-class PulseGenerator {
-  ...
-};
-#endif
+**Benefits:**
+- ✅ Tests compile and run successfully
+- ✅ No modifications to production code needed
+- ✅ Full control over which components are tested
+- ✅ Fast build times (only compiles what's needed)
+- ✅ Easy to extend for other components
+
+### Test Results
+
 ```
+================= 27 test cases: 27 succeeded in 00:00:02.323 =================
 
-**Option 2: Separate Test Library**
-Create `lib/SignalEngine_Test/` with only testable components:
-- SignalState
-- TimingController
-- SignalPersistence
-- SignalEventPublisher
-
-Exclude:
-- PulseGenerator (hardware-dependent)
-- SignalEngine (depends on PulseGenerator)
-- CommandDispatcher (depends on everything)
-
-**Option 3: Manual Build Configuration**
-Use `src_filter` in `platformio.ini` to explicitly list which `.cpp` files to compile for native tests.
+ ✓ calculateCycles() - 6 tests
+ ✓ State management (onStart/onStop/onFrequencyChange) - 6 tests
+ ✓ Cycle counting (getEstimatedCycleCount) - 3 tests
+ ✓ Duration-based auto-stop - 5 tests
+ ✓ Pulse count-based auto-stop - 5 tests
+ ✓ Priority logic - 2 tests
+```
 
 ## Future Tests
 
