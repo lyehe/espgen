@@ -6,6 +6,7 @@
 #include "SignalPersistence.h"
 #include "TimingController.h"
 #include "SignalEventPublisher.h"
+#include "CommandDispatcher.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -67,14 +68,11 @@ private:
     // ESP event publishing
     SignalEventPublisher _eventPublisher;
 
+    // Command queue and dispatcher
+    CommandDispatcher _commandDispatcher;
+
     // Initialization state
     bool _initialized;
-
-    QueueHandle_t xQueueCmd;           // Queue for receiving SignalCmd structs
-    TaskHandle_t xCmdDispatcherHandle; // Handle for the command dispatcher task
-
-    // Task function for processing commands
-    static void cmdDispatcherTask(void *pvParameters);
 }; // End of SignalEngine class definition
 
 #endif // SIGNAL_ENGINE_H 
