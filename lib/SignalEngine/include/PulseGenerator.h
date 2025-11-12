@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "driver/mcpwm.h"
 #include "driver/gpio.h"
-#include "signal_iface.h"  // For PulseParams_t and helper functions
+#include "IPulseGenerator.h"  // Interface definition
 
 /**
  * @brief Multi-channel pulse generator using ESP32 MCPWM peripheral
@@ -20,18 +20,13 @@
  * - Individual slave channel enable/disable (skip functionality)
  * - Nanosecond-level timing precision
  * - Master channel controls frequency for all enabled channels
+ *
+ * This class implements the IPulseGenerator interface for testability
+ * and dependency inversion.
  */
 
 #define MAX_PULSE_CHANNELS 6
 #define MASTER_CHANNEL 0
-
-// Channel configuration structure
-typedef struct {
-    uint8_t gpio_pin;           // GPIO pin for this channel
-    float phase_offset_deg;     // Phase offset in degrees (0-360) relative to master
-    bool enabled;               // Enable/disable (master channel is always enabled)
-    uint8_t skip_count;         // Skip N pulses (0 = no skip, future feature)
-} PulseChannelConfig_t;
 
 // Channel type
 typedef enum {
@@ -39,7 +34,7 @@ typedef enum {
     CHANNEL_SLAVE = 1           // Slave channels (channels 1-5)
 } PulseChannelType_t;
 
-class PulseGenerator {
+class PulseGenerator : public IPulseGenerator {
 public:
     PulseGenerator();
 
@@ -47,7 +42,7 @@ public:
      * @brief Initialize the pulse generator
      * @return true on success, false on failure
      */
-    bool begin();
+    bool begin() override;
 
     /**
      * @brief Configure a specific channel
@@ -56,14 +51,14 @@ public:
      * @return true on success, false on failure
      * @note Master channel (0) is always enabled regardless of config.enabled
      */
-    bool configureChannel(uint8_t channel_id, const PulseChannelConfig_t& config);
+    bool configureChannel(uint8_t channel_id, const PulseChannelConfig_t& config) override;
 
     /**
      * @brief Configure the master channel
      * @param gpio_pin GPIO pin for master output
      * @return true on success, false on failure
      */
-    bool configureMaster(uint8_t gpio_pin);
+    bool configureMaster(uint8_t gpio_pin) override;
 
     /**
      * @brief Configure a slave channel with phase offset
@@ -73,14 +68,14 @@ public:
      * @param enabled Initial enable state
      * @return true on success, false on failure
      */
-    bool configureSlave(uint8_t slave_id, uint8_t gpio_pin, float phase_offset_deg, bool enabled = true);
+    bool configureSlave(uint8_t slave_id, uint8_t gpio_pin, float phase_offset_deg, bool enabled = true) override;
 
     /**
      * @brief Set frequency for all channels (synchronized)
      * @param frequency_hz Frequency in Hz (1 - 40000000)
      * @return true on success, false on failure
      */
-    bool setFrequency(double frequency_hz);
+    bool setFrequency(double frequency_hz) override;
 
     /**
      * @brief Set duty cycle for a specific channel
@@ -88,14 +83,14 @@ public:
      * @param duty_cycle Duty cycle (0.0 - 1.0)
      * @return true on success, false on failure
      */
-    bool setDutyCycle(uint8_t channel_id, float duty_cycle);
+    bool setDutyCycle(uint8_t channel_id, float duty_cycle) override;
 
     /**
      * @brief Set duty cycle for all enabled channels
      * @param duty_cycle Duty cycle (0.0 - 1.0)
      * @return true on success, false on failure
      */
-    bool setAllDutyCycles(float duty_cycle);
+    bool setAllDutyCycles(float duty_cycle) override;
 
     // ===== EXACT PARAMETER METHODS =====
 
@@ -104,7 +99,7 @@ public:
      * @param period_us Period in microseconds (25 to 1000000000)
      * @return true on success, false on failure
      */
-    bool setPeriod(uint32_t period_us);
+    bool setPeriod(uint32_t period_us) override;
 
     /**
      * @brief Set exact pulse width for a specific channel
@@ -113,14 +108,14 @@ public:
      * @return true on success, false on failure
      * @note Pulse width must be less than period
      */
-    bool setPulseWidth(uint8_t channel_id, uint32_t pulse_width_us);
+    bool setPulseWidth(uint8_t channel_id, uint32_t pulse_width_us) override;
 
     /**
      * @brief Set pulse width for all enabled channels
      * @param pulse_width_us Pulse width in microseconds
      * @return true on success, false on failure
      */
-    bool setAllPulseWidths(uint32_t pulse_width_us);
+    bool setAllPulseWidths(uint32_t pulse_width_us) override;
 
     /**
      * @brief Set comprehensive pulse parameters using PulseParams_t structure
@@ -128,7 +123,7 @@ public:
      * @param params Comprehensive parameters structure
      * @return true on success, false on failure
      */
-    bool setParams(uint8_t channel_id, const PulseParams_t& params);
+    bool setParams(uint8_t channel_id, const PulseParams_t& params) override;
 
     /**
      * @brief Set phase delay in microseconds (alternative to phase in degrees)
@@ -136,7 +131,7 @@ public:
      * @param delay_us Phase delay in microseconds
      * @return true on success, false on failure
      */
-    bool setPhaseDelay(uint8_t channel_id, uint32_t delay_us);
+    bool setPhaseDelay(uint8_t channel_id, uint32_t delay_us) override;
 
     /**
      * @brief Set signal polarity for a channel
@@ -144,39 +139,39 @@ public:
      * @param polarity POLARITY_ACTIVE_HIGH or POLARITY_ACTIVE_LOW
      * @return true on success, false on failure
      */
-    bool setPolarity(uint8_t channel_id, SignalPolarity polarity);
+    bool setPolarity(uint8_t channel_id, SignalPolarity polarity) override;
 
     /**
      * @brief Get current period in microseconds
      * @return Period in microseconds
      */
-    uint32_t getPeriodUs() const;
+    uint32_t getPeriodUs() const override;
 
     /**
      * @brief Get current pulse width for a channel
      * @param channel_id Channel number (0-5)
      * @return Pulse width in microseconds
      */
-    uint32_t getPulseWidthUs(uint8_t channel_id) const;
+    uint32_t getPulseWidthUs(uint8_t channel_id) const override;
 
     /**
      * @brief Get phase delay in microseconds for a channel
      * @param channel_id Channel number (0-5)
      * @return Phase delay in microseconds
      */
-    uint32_t getPhaseDelayUs(uint8_t channel_id) const;
+    uint32_t getPhaseDelayUs(uint8_t channel_id) const override;
 
     /**
      * @brief Start pulse generation on all enabled channels (synchronized)
      * @return true on success, false on failure
      */
-    bool start();
+    bool start() override;
 
     /**
      * @brief Stop pulse generation on all channels
      * @return true on success, false on failure
      */
-    bool stop();
+    bool stop() override;
 
     /**
      * @brief Enable or disable a specific channel
@@ -185,7 +180,7 @@ public:
      * @return true on success, false on failure
      * @note Master channel (0) cannot be disabled - calling with channel 0 returns false
      */
-    bool enableChannel(uint8_t channel_id, bool enabled);
+    bool enableChannel(uint8_t channel_id, bool enabled) override;
 
     /**
      * @brief Enable or disable a slave channel
@@ -193,49 +188,49 @@ public:
      * @param enabled true to enable, false to disable
      * @return true on success, false on failure
      */
-    bool enableSlave(uint8_t slave_id, bool enabled);
+    bool enableSlave(uint8_t slave_id, bool enabled) override;
 
     /**
      * @brief Disable all slave channels (master remains active)
      */
-    void disableAllSlaves();
+    void disableAllSlaves() override;
 
     /**
      * @brief Enable all configured slave channels
      */
-    void enableAllSlaves();
+    void enableAllSlaves() override;
 
     /**
      * @brief Trigger a software sync to realign all channels
      * @return true on success, false on failure
      */
-    bool triggerSync();
+    bool triggerSync() override;
 
     // Getters
-    double getFrequency() const { return _frequency; }
-    float getDutyCycle(uint8_t channel_id) const;
-    bool isRunning() const { return _is_running; }
-    bool isChannelEnabled(uint8_t channel_id) const;
-    uint8_t getChannelPin(uint8_t channel_id) const;
+    double getFrequency() const override { return _frequency; }
+    float getDutyCycle(uint8_t channel_id) const override;
+    bool isRunning() const override { return _is_running; }
+    bool isChannelEnabled(uint8_t channel_id) const override;
+    uint8_t getChannelPin(uint8_t channel_id) const override;
 
     /**
      * @brief Get the master channel's duty cycle
      * @return Master duty cycle (0.0 - 1.0)
      */
-    float getMasterDutyCycle() const { return getDutyCycle(MASTER_CHANNEL); }
+    float getMasterDutyCycle() const override { return getDutyCycle(MASTER_CHANNEL); }
 
     /**
      * @brief Get number of enabled slave channels
      * @return Count of enabled slaves (0-5)
      */
-    uint8_t getEnabledSlaveCount() const;
+    uint8_t getEnabledSlaveCount() const override;
 
     /**
      * @brief Check if a channel is the master
      * @param channel_id Channel to check
      * @return true if channel is the master
      */
-    bool isMasterChannel(uint8_t channel_id) const { return channel_id == MASTER_CHANNEL; }
+    bool isMasterChannel(uint8_t channel_id) const override { return channel_id == MASTER_CHANNEL; }
 
     /**
      * @brief Get complete channel configuration
@@ -243,21 +238,21 @@ public:
      * @param config Output parameter to receive channel configuration
      * @return true on success, false if channel_id is invalid
      */
-    bool getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const;
+    bool getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const override;
 
     /**
      * @brief Get phase offset for a channel
      * @param channel_id Channel number (0-5)
      * @return Phase offset in degrees (0-360), or 0 if invalid channel
      */
-    float getPhaseOffset(uint8_t channel_id) const;
+    float getPhaseOffset(uint8_t channel_id) const override;
 
     /**
      * @brief Get signal polarity for a channel
      * @param channel_id Channel number (0-5)
      * @return Signal polarity (POLARITY_ACTIVE_HIGH or POLARITY_ACTIVE_LOW)
      */
-    SignalPolarity getPolarity(uint8_t channel_id) const;
+    SignalPolarity getPolarity(uint8_t channel_id) const override;
 
     // ===== STATUS INDICATOR METHODS =====
 
@@ -269,19 +264,19 @@ public:
      * The indicator pin will be HIGH when signal is running, LOW when stopped.
      * Useful for LED indicators, enable signals, or monitoring.
      */
-    bool setIndicatorPin(uint8_t gpio_pin);
+    bool setIndicatorPin(uint8_t gpio_pin) override;
 
     /**
      * @brief Get the current indicator pin
      * @return GPIO pin number (0 = disabled)
      */
-    uint8_t getIndicatorPin() const { return _indicator_pin; }
+    uint8_t getIndicatorPin() const override { return _indicator_pin; }
 
     /**
      * @brief Check if indicator is enabled
      * @return true if indicator pin is configured
      */
-    bool hasIndicator() const { return _indicator_pin > 0; }
+    bool hasIndicator() const override { return _indicator_pin > 0; }
 
 private:
     // Internal state

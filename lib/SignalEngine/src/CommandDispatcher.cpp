@@ -1,5 +1,5 @@
 #include "CommandDispatcher.h"
-#include "PulseGenerator.h"
+#include "IPulseGenerator.h"
 #include "SignalState.h"
 #include "SignalPersistence.h"
 #include "TimingController.h"
@@ -9,7 +9,7 @@
 #include "esp_timer.h"
 
 CommandDispatcher::CommandDispatcher(
-    PulseGenerator& pulseGen,
+    IPulseGenerator& pulseGen,
     SignalState& state,
     SignalPersistence& persistence,
     TimingController& timingController,

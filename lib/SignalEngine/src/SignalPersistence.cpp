@@ -9,6 +9,10 @@ const char* SignalPersistence::NVS_KEY_FREQ = "lastFreq";
 const char* SignalPersistence::NVS_KEY_DUTY = "lastDuty";
 const char* SignalPersistence::NVS_KEY_DUR = "lastDur";
 
+// Presets namespace and constants
+const char* SignalPersistence::PRESETS_NAMESPACE = "Presets";
+const char* SignalPersistence::PRESETS_LIST_KEY = "list";
+
 SignalPersistence::SignalPersistence() {
     // Constructor body (if needed)
 }
@@ -241,4 +245,207 @@ bool SignalPersistence::isValidDuration(float duration) const {
 
 bool SignalPersistence::isValidOutputPin(uint8_t pin) const {
     return ::isValidOutputPin(pin); // Use global helper from param_helpers.h
+}
+
+// ========== Configuration Presets ==========
+
+bool SignalPersistence::savePreset(const char* presetName, double freq, float duty, float duration) {
+    // Validate preset name
+    if (presetName == nullptr || strlen(presetName) == 0 || strlen(presetName) > MAX_PRESET_NAME_LEN) {
+        Serial.printf("SignalPersistence: ERROR - Invalid preset name (must be 1-%d chars)\n", MAX_PRESET_NAME_LEN);
+        return false;
+    }
+
+    // Validate parameters
+    if (!isValidFrequency(freq) || !isValidDutyCycle(duty) || !isValidDuration(duration)) {
+        Serial.println("SignalPersistence: ERROR - Invalid preset parameters");
+        return false;
+    }
+
+    Preferences prefs;
+    if (!prefs.begin(PRESETS_NAMESPACE, false)) {
+        Serial.printf("SignalPersistence: ERROR - Failed to open namespace '%s' for writing\n", PRESETS_NAMESPACE);
+        return false;
+    }
+
+    // Create keys for this preset
+    char freqKey[20], dutyKey[20], durKey[20];
+    snprintf(freqKey, sizeof(freqKey), "%s_f", presetName);
+    snprintf(dutyKey, sizeof(dutyKey), "%s_d", presetName);
+    snprintf(durKey, sizeof(durKey), "%s_t", presetName);
+
+    // Save preset values
+    prefs.putDouble(freqKey, freq);
+    prefs.putFloat(dutyKey, duty);
+    prefs.putFloat(durKey, duration);
+
+    // Update preset list
+    char presetList[256] = {0};
+    size_t len = prefs.getString(PRESETS_LIST_KEY, presetList, sizeof(presetList));
+
+    // Check if preset name already exists in list
+    bool alreadyExists = false;
+    if (len > 0) {
+        String listStr = String(presetList);
+        if (listStr.indexOf(String(presetName)) >= 0) {
+            alreadyExists = true;
+        }
+    }
+
+    // Add to list if it doesn't exist
+    if (!alreadyExists) {
+        if (len > 0) {
+            strncat(presetList, ",", sizeof(presetList) - strlen(presetList) - 1);
+        }
+        strncat(presetList, presetName, sizeof(presetList) - strlen(presetList) - 1);
+        prefs.putString(PRESETS_LIST_KEY, presetList);
+    }
+
+    prefs.end();
+
+    Serial.printf("SignalPersistence: Saved preset '%s' (F=%.2f Hz, D=%.2f%%, T=%.2f s)\n",
+                  presetName, freq, duty * 100.0, duration);
+    return true;
+}
+
+bool SignalPersistence::loadPreset(const char* presetName, SignalSettings& settings) {
+    if (presetName == nullptr || strlen(presetName) == 0) {
+        Serial.println("SignalPersistence: ERROR - Invalid preset name");
+        return false;
+    }
+
+    Preferences prefs;
+    if (!prefs.begin(PRESETS_NAMESPACE, true)) { // Read-only
+        Serial.printf("SignalPersistence: ERROR - Failed to open namespace '%s' for reading\n", PRESETS_NAMESPACE);
+        return false;
+    }
+
+    // Create keys for this preset
+    char freqKey[20], dutyKey[20], durKey[20];
+    snprintf(freqKey, sizeof(freqKey), "%s_f", presetName);
+    snprintf(dutyKey, sizeof(dutyKey), "%s_d", presetName);
+    snprintf(durKey, sizeof(durKey), "%s_t", presetName);
+
+    // Check if preset exists
+    if (!prefs.isKey(freqKey)) {
+        prefs.end();
+        Serial.printf("SignalPersistence: Preset '%s' not found\n", presetName);
+        return false;
+    }
+
+    // Load preset values
+    settings.frequencyHz = prefs.getDouble(freqKey, DEFAULT_FREQUENCY_HZ);
+    settings.dutyCycle = prefs.getFloat(dutyKey, DEFAULT_DUTY_CYCLE);
+    settings.durationSec = prefs.getFloat(durKey, 0.0f);
+    settings.valid = true;
+
+    prefs.end();
+
+    Serial.printf("SignalPersistence: Loaded preset '%s' (F=%.2f Hz, D=%.2f%%, T=%.2f s)\n",
+                  presetName, settings.frequencyHz, settings.dutyCycle * 100.0, settings.durationSec);
+    return true;
+}
+
+bool SignalPersistence::deletePreset(const char* presetName) {
+    if (presetName == nullptr || strlen(presetName) == 0) {
+        Serial.println("SignalPersistence: ERROR - Invalid preset name");
+        return false;
+    }
+
+    Preferences prefs;
+    if (!prefs.begin(PRESETS_NAMESPACE, false)) {
+        Serial.printf("SignalPersistence: ERROR - Failed to open namespace '%s'\n", PRESETS_NAMESPACE);
+        return false;
+    }
+
+    // Create keys for this preset
+    char freqKey[20], dutyKey[20], durKey[20];
+    snprintf(freqKey, sizeof(freqKey), "%s_f", presetName);
+    snprintf(dutyKey, sizeof(dutyKey), "%s_d", presetName);
+    snprintf(durKey, sizeof(durKey), "%s_t", presetName);
+
+    // Remove preset values
+    prefs.remove(freqKey);
+    prefs.remove(dutyKey);
+    prefs.remove(durKey);
+
+    // Update preset list
+    char presetList[256] = {0};
+    size_t len = prefs.getString(PRESETS_LIST_KEY, presetList, sizeof(presetList));
+
+    if (len > 0) {
+        String listStr = String(presetList);
+        String target = String(presetName);
+
+        // Remove the preset name from the list
+        int idx = listStr.indexOf(target);
+        if (idx >= 0) {
+            // Remove the preset name and any adjacent comma
+            String newList = "";
+            if (idx == 0) {
+                // First item - remove it and the following comma if any
+                newList = listStr.substring(target.length());
+                if (newList.startsWith(",")) {
+                    newList = newList.substring(1);
+                }
+            } else {
+                // Not first item - remove preceding comma and the preset name
+                newList = listStr.substring(0, idx - 1) + listStr.substring(idx + target.length());
+            }
+            prefs.putString(PRESETS_LIST_KEY, newList.c_str());
+        }
+    }
+
+    prefs.end();
+
+    Serial.printf("SignalPersistence: Deleted preset '%s'\n", presetName);
+    return true;
+}
+
+bool SignalPersistence::presetExists(const char* presetName) {
+    if (presetName == nullptr || strlen(presetName) == 0) {
+        return false;
+    }
+
+    Preferences prefs;
+    if (!prefs.begin(PRESETS_NAMESPACE, true)) { // Read-only
+        return false;
+    }
+
+    char freqKey[20];
+    snprintf(freqKey, sizeof(freqKey), "%s_f", presetName);
+    bool exists = prefs.isKey(freqKey);
+
+    prefs.end();
+    return exists;
+}
+
+int SignalPersistence::listPresets(char* outBuffer, size_t bufferSize) {
+    if (outBuffer == nullptr || bufferSize == 0) {
+        return 0;
+    }
+
+    outBuffer[0] = '\0'; // Initialize to empty string
+
+    Preferences prefs;
+    if (!prefs.begin(PRESETS_NAMESPACE, true)) { // Read-only
+        return 0;
+    }
+
+    size_t len = prefs.getString(PRESETS_LIST_KEY, outBuffer, bufferSize);
+    prefs.end();
+
+    if (len == 0) {
+        return 0;
+    }
+
+    // Count presets (count commas + 1)
+    int count = 1;
+    for (size_t i = 0; i < len && outBuffer[i] != '\0'; i++) {
+        if (outBuffer[i] == ',') {
+            count++;
+        }
+    }
+
+    return count;
 }

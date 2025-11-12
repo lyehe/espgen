@@ -106,12 +106,76 @@ public:
      */
     bool isNvsAccessible();
 
+    // ========== Configuration Presets ==========
+
+    /**
+     * @brief Save current configuration as a named preset
+     *
+     * Saves frequency, duty cycle, and duration to NVS under a preset name.
+     * Preset names are limited to 15 characters and are case-sensitive.
+     * Maximum of 10 presets can be stored.
+     *
+     * @param presetName Name of the preset (max 15 chars)
+     * @param freq Frequency in Hz
+     * @param duty Duty cycle (0.0 to 1.0)
+     * @param duration Duration in seconds
+     * @return true if saved successfully, false on error
+     */
+    bool savePreset(const char* presetName, double freq, float duty, float duration);
+
+    /**
+     * @brief Load a named preset
+     *
+     * Loads signal parameters from a named preset.
+     *
+     * @param presetName Name of the preset to load
+     * @param settings Output parameter to receive loaded settings
+     * @return true if preset exists and was loaded, false otherwise
+     */
+    bool loadPreset(const char* presetName, SignalSettings& settings);
+
+    /**
+     * @brief Delete a named preset
+     *
+     * Removes a preset from NVS.
+     *
+     * @param presetName Name of the preset to delete
+     * @return true if deleted successfully, false on error
+     */
+    bool deletePreset(const char* presetName);
+
+    /**
+     * @brief Check if a preset exists
+     *
+     * @param presetName Name of the preset to check
+     * @return true if preset exists, false otherwise
+     */
+    bool presetExists(const char* presetName);
+
+    /**
+     * @brief List all saved presets
+     *
+     * Returns a list of preset names separated by commas.
+     * Maximum string length is 256 characters.
+     *
+     * @param outBuffer Buffer to receive preset names
+     * @param bufferSize Size of output buffer
+     * @return Number of presets found
+     */
+    int listPresets(char* outBuffer, size_t bufferSize);
+
 private:
     // NVS namespace and keys for signal parameters
     static const char* NVS_NAMESPACE;        // "SignalEngine"
     static const char* NVS_KEY_FREQ;         // "lastFreq"
     static const char* NVS_KEY_DUTY;         // "lastDuty"
     static const char* NVS_KEY_DUR;          // "lastDur"
+
+    // Presets namespace and constants
+    static const char* PRESETS_NAMESPACE;    // "Presets"
+    static const char* PRESETS_LIST_KEY;     // "list" - comma-separated preset names
+    static constexpr int MAX_PRESETS = 10;
+    static constexpr int MAX_PRESET_NAME_LEN = 15;
 
     // Device config namespace and key (shared with other modules)
     // Defined in preferences_keys.h: DEVICE_CFG_NAMESPACE, OUTPUT_PIN_KEY

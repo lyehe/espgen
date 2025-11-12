@@ -8,7 +8,7 @@
 #include "signal_iface.h"
 
 // Forward declarations
-class PulseGenerator;
+class IPulseGenerator;
 class SignalState;
 class SignalPersistence;
 class TimingController;
@@ -29,6 +29,7 @@ class SignalEventPublisher;
  * - Coordinate state, persistence, timing, and event subsystems
  *
  * Design Pattern: Single Responsibility Principle + Dependency Injection
+ * Design Pattern: Dependency Inversion - Depends on IPulseGenerator interface
  * Thread Safety: FreeRTOS queue and task-based command processing
  */
 
@@ -38,16 +39,16 @@ public:
      * @brief Constructor with dependency injection
      *
      * All dependencies are injected to maintain clean architecture and
-     * enable testability.
+     * enable testability. Uses IPulseGenerator interface for DIP compliance.
      *
-     * @param pulseGen Reference to PulseGenerator for hardware control
+     * @param pulseGen Reference to IPulseGenerator for hardware control
      * @param state Reference to SignalState for state management
      * @param persistence Reference to SignalPersistence for NVS operations
      * @param timingController Reference to TimingController for timing operations
      * @param eventPublisher Reference to SignalEventPublisher for event publishing
      */
     CommandDispatcher(
-        PulseGenerator& pulseGen,
+        IPulseGenerator& pulseGen,
         SignalState& state,
         SignalPersistence& persistence,
         TimingController& timingController,
@@ -84,8 +85,8 @@ public:
     bool isInitialized() const;
 
 private:
-    // Injected dependencies
-    PulseGenerator& _pulseGen;
+    // Injected dependencies (using interface for DIP compliance)
+    IPulseGenerator& _pulseGen;
     SignalState& _state;
     SignalPersistence& _persistence;
     TimingController& _timingController;

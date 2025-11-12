@@ -513,9 +513,7 @@ void ApiRouter::handleChannelPost(AsyncWebServerRequest *request, JsonVariant &j
 
 // Handler implementation for GET /api/channels
 void ApiRouter::handleChannelsGet(AsyncWebServerRequest *request) {
-    // Note: We need to add getters to SignalEngine to access PulseGenerator channel info
-    // For now, we'll return a basic structure showing that the endpoint exists
-
+    // Returns complete channel configuration from SignalEngine/PulseGenerator
     JsonDocument doc;
     JsonArray channels = doc["channels"].to<JsonArray>();
 

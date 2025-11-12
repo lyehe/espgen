@@ -213,4 +213,8 @@ SignalPolarity SignalEngine::getChannelPolarity(uint8_t channel_id) const {
     return pulseGen.getPolarity(channel_id);
 }
 
- 
+// --- Indicator Pin Getter ---
+uint8_t SignalEngine::getIndicatorPin() const {
+    return pulseGen.getIndicatorPin();
+}
+

@@ -52,6 +52,9 @@ public:
     float getChannelPhaseOffset(uint8_t channel_id) const;
     SignalPolarity getChannelPolarity(uint8_t channel_id) const;
 
+    // --- Indicator Pin Getter ---
+    uint8_t getIndicatorPin() const;
+
 private:
     // Multi-channel pulse generator (MCPWM-based)
     PulseGenerator pulseGen;

@@ -145,8 +145,7 @@ public:
     }
 
     int getIndicatorPin() const override {
-        // Note: Would need getter in PulseGenerator
-        return -1; // Not available
+        return _engine.getIndicatorPin();
     }
 
 private:
