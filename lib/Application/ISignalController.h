@@ -4,6 +4,10 @@
 
 #include "signal_iface.h"
 
+// Forward declarations
+struct PerformanceMetrics;
+struct SignalSettings;
+
 /**
  * @brief Signal control service interface
  *
@@ -68,6 +72,68 @@ public:
 };
 
 /**
+ * @brief Performance monitoring service interface
+ *
+ * Provides access to system performance metrics.
+ */
+class IPerformanceService {
+public:
+    virtual ~IPerformanceService() = default;
+
+    /**
+     * @brief Get current performance metrics
+     * @param metrics Output parameter to receive metrics
+     */
+    virtual void getPerformanceMetrics(PerformanceMetrics& metrics) = 0;
+};
+
+/**
+ * @brief Preset configuration service interface
+ *
+ * Manages saving and loading of signal configuration presets.
+ */
+class IPresetService {
+public:
+    virtual ~IPresetService() = default;
+
+    /**
+     * @brief Save current configuration as a preset
+     * @param name Preset name (max 15 chars)
+     * @return true if saved successfully
+     */
+    virtual bool savePreset(const char* name) = 0;
+
+    /**
+     * @brief Load a preset configuration
+     * @param name Preset name to load
+     * @return true if loaded and applied successfully
+     */
+    virtual bool loadPreset(const char* name) = 0;
+
+    /**
+     * @brief Delete a preset
+     * @param name Preset name to delete
+     * @return true if deleted successfully
+     */
+    virtual bool deletePreset(const char* name) = 0;
+
+    /**
+     * @brief Check if a preset exists
+     * @param name Preset name to check
+     * @return true if preset exists
+     */
+    virtual bool presetExists(const char* name) = 0;
+
+    /**
+     * @brief List all saved presets
+     * @param buffer Output buffer for comma-separated preset names
+     * @param bufferSize Size of output buffer
+     * @return Number of presets found
+     */
+    virtual int listPresets(char* buffer, size_t bufferSize) = 0;
+};
+
+/**
  * @brief Complete application facade
  *
  * Combines all service interfaces into a single entry point
@@ -75,7 +141,9 @@ public:
  */
 class ISignalController : public ISignalService,
                           public IChannelService,
-                          public IPinService {
+                          public IPinService,
+                          public IPerformanceService,
+                          public IPresetService {
 public:
     virtual ~ISignalController() = default;
 };

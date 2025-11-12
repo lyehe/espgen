@@ -227,3 +227,42 @@ void SignalEngine::getPerformanceMetrics(PerformanceMetrics& metrics) {
     _commandDispatcher.getPerformanceMetrics(metrics);
 }
 
+// --- Configuration Presets ---
+bool SignalEngine::savePreset(const char* name) {
+    // Get current parameters from state
+    double freq = _state.getLastAppliedFrequencyHz();
+    float duty = _state.getLastAppliedDutyCycle();
+    float duration = _state.getLastAppliedDurationSec();
+
+    return _persistence.savePreset(name, freq, duty, duration);
+}
+
+bool SignalEngine::loadPreset(const char* name) {
+    SignalSettings settings;
+    if (!_persistence.loadPreset(name, settings)) {
+        return false;
+    }
+
+    // Apply the loaded preset by sending a START command
+    SignalCmd cmd = {0};
+    cmd.type = SIG_CMD_START;
+    cmd.frequencyHz = settings.frequencyHz;
+    cmd.dutyCycle = settings.dutyCycle;
+    cmd.durationSec = settings.durationSec;
+    cmd.paramMode = PARAM_USE_FREQUENCY | PARAM_USE_DUTY_CYCLE | PARAM_USE_DURATION;
+
+    return sendCommand(cmd);
+}
+
+bool SignalEngine::deletePreset(const char* name) {
+    return _persistence.deletePreset(name);
+}
+
+bool SignalEngine::presetExists(const char* name) {
+    return _persistence.presetExists(name);
+}
+
+int SignalEngine::listPresets(char* buffer, size_t bufferSize) {
+    return _persistence.listPresets(buffer, bufferSize);
+}
+

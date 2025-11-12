@@ -69,6 +69,43 @@ public:
      */
     void getPerformanceMetrics(PerformanceMetrics& metrics);
 
+    // --- Configuration Presets ---
+    /**
+     * @brief Save current configuration as a preset
+     * @param name Preset name (max 15 chars)
+     * @return true if saved successfully
+     */
+    bool savePreset(const char* name);
+
+    /**
+     * @brief Load a preset and apply it
+     * @param name Preset name to load
+     * @return true if loaded and applied successfully
+     */
+    bool loadPreset(const char* name);
+
+    /**
+     * @brief Delete a preset
+     * @param name Preset name to delete
+     * @return true if deleted successfully
+     */
+    bool deletePreset(const char* name);
+
+    /**
+     * @brief Check if a preset exists
+     * @param name Preset name
+     * @return true if preset exists
+     */
+    bool presetExists(const char* name);
+
+    /**
+     * @brief List all saved presets
+     * @param buffer Output buffer
+     * @param bufferSize Buffer size
+     * @return Number of presets found
+     */
+    int listPresets(char* buffer, size_t bufferSize);
+
 private:
     // Multi-channel pulse generator (interface for DIP compliance)
     IPulseGenerator& pulseGen;

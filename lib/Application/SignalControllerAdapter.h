@@ -148,6 +148,32 @@ public:
         return _engine.getIndicatorPin();
     }
 
+    // IPerformanceService implementation
+    void getPerformanceMetrics(PerformanceMetrics& metrics) override {
+        _engine.getPerformanceMetrics(metrics);
+    }
+
+    // IPresetService implementation
+    bool savePreset(const char* name) override {
+        return _engine.savePreset(name);
+    }
+
+    bool loadPreset(const char* name) override {
+        return _engine.loadPreset(name);
+    }
+
+    bool deletePreset(const char* name) override {
+        return _engine.deletePreset(name);
+    }
+
+    bool presetExists(const char* name) override {
+        return _engine.presetExists(name);
+    }
+
+    int listPresets(char* buffer, size_t bufferSize) override {
+        return _engine.listPresets(buffer, bufferSize);
+    }
+
 private:
     SignalEngine& _engine; // Reference to existing domain object
 };
