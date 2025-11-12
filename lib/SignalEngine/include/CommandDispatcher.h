@@ -6,6 +6,7 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "signal_iface.h"
+#include "PerformanceMonitor.h"
 
 // Forward declarations
 class IPulseGenerator;
@@ -84,6 +85,13 @@ public:
      */
     bool isInitialized() const;
 
+    /**
+     * @brief Get performance metrics
+     *
+     * @param metrics Output parameter to receive current metrics
+     */
+    void getPerformanceMetrics(PerformanceMetrics& metrics);
+
 private:
     // Injected dependencies (using interface for DIP compliance)
     IPulseGenerator& _pulseGen;
@@ -91,6 +99,9 @@ private:
     SignalPersistence& _persistence;
     TimingController& _timingController;
     SignalEventPublisher& _eventPublisher;
+
+    // Performance monitoring
+    PerformanceMonitor _perfMonitor;
 
     // FreeRTOS resources
     QueueHandle_t _commandQueue;

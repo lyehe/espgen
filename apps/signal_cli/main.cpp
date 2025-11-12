@@ -2,11 +2,13 @@
 // Test application focusing on SignalEngine and SerialCLI
 
 #include <Arduino.h>
+#include "PulseGenerator.h" // Concrete implementation
 #include "SignalEngine.h"
 #include "signal_iface.h" // Include for SignalCmd
 #include "SerialCLI.h"    // Include the new Serial CLI library
 
-SignalEngine engine;
+PulseGenerator pulseGen; // Hardware implementation
+SignalEngine engine(pulseGen); // Inject dependency
 // SerialCLI cli(engine); // Create SerialCLI instance, pass engine reference
 SerialCLI* cli_ptr = nullptr; // Declare pointer globally
 

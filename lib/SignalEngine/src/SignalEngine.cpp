@@ -18,8 +18,8 @@ void heartbeat_task(void *pvParameters) {
     }
 }
 
-SignalEngine::SignalEngine() :
-    pulseGen(),
+SignalEngine::SignalEngine(IPulseGenerator& pulseGen) :
+    pulseGen(pulseGen),
     _state(),
     _persistence(),
     _timingController(),
@@ -172,6 +172,10 @@ SignalError SignalEngine::getCurrentStatus(SignalStatus_t& status) {
         status.dutyCycle = _state.getCurrentDutyCycle_nolock();
         status.isRunning = _state.isRunning_nolock();
         status.lastAppliedDurationSec = _state.getLastAppliedDurationSec_nolock();
+
+        // Add missing period and pulse width from hardware
+        status.periodUs = pulseGen.getPeriodUs();
+        status.pulseWidthUs = pulseGen.getPulseWidthUs(0); // Channel 0 (master)
     });
 
     return SIG_OK;
@@ -216,5 +220,10 @@ SignalPolarity SignalEngine::getChannelPolarity(uint8_t channel_id) const {
 // --- Indicator Pin Getter ---
 uint8_t SignalEngine::getIndicatorPin() const {
     return pulseGen.getIndicatorPin();
+}
+
+// --- Performance Metrics ---
+void SignalEngine::getPerformanceMetrics(PerformanceMetrics& metrics) {
+    _commandDispatcher.getPerformanceMetrics(metrics);
 }
 

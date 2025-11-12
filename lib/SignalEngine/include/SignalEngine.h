@@ -1,7 +1,7 @@
 #ifndef SIGNAL_ENGINE_H
 #define SIGNAL_ENGINE_H
 
-#include "PulseGenerator.h"
+#include "IPulseGenerator.h"
 #include "SignalState.h"
 #include "SignalPersistence.h"
 #include "TimingController.h"
@@ -13,12 +13,19 @@
 #include <freertos/queue.h>
 #include "esp_event.h"
 
+// Forward declarations
+struct PerformanceMetrics;
+
 // Declare the event base
 ESP_EVENT_DECLARE_BASE(SIGNAL_EVENTS);
 
 class SignalEngine {
 public:
-    SignalEngine();
+    /**
+     * @brief Constructor with dependency injection
+     * @param pulseGen Reference to IPulseGenerator implementation for hardware control
+     */
+    SignalEngine(IPulseGenerator& pulseGen);
     bool begin(); // Initialize engine - returns false on critical failure
     void loop(); // For periodic tasks if needed (e.g., heartbeat)
     bool sendCommand(const SignalCmd& cmd); // Send command to the engine's queue
@@ -55,9 +62,16 @@ public:
     // --- Indicator Pin Getter ---
     uint8_t getIndicatorPin() const;
 
+    // --- Performance Metrics ---
+    /**
+     * @brief Get performance metrics from CommandDispatcher
+     * @param metrics Output parameter to receive metrics
+     */
+    void getPerformanceMetrics(PerformanceMetrics& metrics);
+
 private:
-    // Multi-channel pulse generator (MCPWM-based)
-    PulseGenerator pulseGen;
+    // Multi-channel pulse generator (interface for DIP compliance)
+    IPulseGenerator& pulseGen;
 
     // Centralized state management with thread safety
     SignalState _state;

@@ -7,6 +7,7 @@
 #include "esp_event.h"      // ESP-IDF event loop
 #include "SystemHealth.h"   // System health monitoring
 
+#include "PulseGenerator.h" // Concrete implementation
 #include "SignalEngine.h"
 #include "signal_iface.h" // Needed for SignalCmd struct
 #include <Button2.h>        // Include Button2 library
@@ -24,10 +25,13 @@
 #define BUTTON_PIN 23
 
 // Instantiate components following Clean Architecture
-// Domain Layer
-SignalEngine signalEngine;
-
 // Infrastructure
+PulseGenerator pulseGen; // Concrete hardware implementation
+
+// Domain Layer (with dependency injection)
+SignalEngine signalEngine(pulseGen); // Inject IPulseGenerator interface
+
+// UI Infrastructure
 Button2 button;
 
 // Pointer to signal engine for use in button handler

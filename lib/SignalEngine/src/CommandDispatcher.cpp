@@ -84,6 +84,10 @@ bool CommandDispatcher::isInitialized() const {
     return _initialized;
 }
 
+void CommandDispatcher::getPerformanceMetrics(PerformanceMetrics& metrics) {
+    _perfMonitor.getMetrics(metrics);
+}
+
 void CommandDispatcher::dispatcherTask(void* pvParameters) {
     CommandDispatcher* dispatcher = static_cast<CommandDispatcher*>(pvParameters);
     SignalCmd receivedCmd;
@@ -92,11 +96,15 @@ void CommandDispatcher::dispatcherTask(void* pvParameters) {
 
     for (;;) {
         if (xQueueReceive(dispatcher->_commandQueue, &receivedCmd, portMAX_DELAY) == pdPASS) {
+            // Start performance timing
+            uint64_t startTime = dispatcher->_perfMonitor.startCommandTiming();
+
             Serial.printf("CommandDispatcher: Received command type %d\n", receivedCmd.type);
 
             // Validate command
             if (!validateSignalCmd(&receivedCmd)) {
                 Serial.println("CommandDispatcher: ERROR - Invalid command parameters, ignoring");
+                dispatcher->_perfMonitor.endCommandTiming(startTime); // Record even failed commands
                 continue;
             }
 
@@ -164,7 +172,13 @@ void CommandDispatcher::dispatcherTask(void* pvParameters) {
                 if (!eventPosted) {
                     Serial.printf("WARNING: Failed to post event %d\n", eventId);
                 }
+
+                // Record event metrics
+                dispatcher->_perfMonitor.recordEvent(eventPosted);
             }
+
+            // End performance timing
+            dispatcher->_perfMonitor.endCommandTiming(startTime);
         }
     }
 }
