@@ -56,6 +56,23 @@ private:
     // Handler for POST requests to /api/sync (trigger manual sync)
     void handleSyncPost(AsyncWebServerRequest *request);
 
+    // --- Performance Metrics Handler ---
+    // Handler for GET requests to /api/metrics
+    void handleMetricsGet(AsyncWebServerRequest *request);
+
+    // --- Preset Management Handlers ---
+    // Handler for GET requests to /api/presets (list all presets)
+    void handlePresetsListGet(AsyncWebServerRequest *request);
+
+    // Handler for POST requests to /api/preset/save
+    void handlePresetSavePost(AsyncWebServerRequest *request, JsonVariant &json);
+
+    // Handler for POST requests to /api/preset/load
+    void handlePresetLoadPost(AsyncWebServerRequest *request, JsonVariant &json);
+
+    // Handler for DELETE requests to /api/preset/delete
+    void handlePresetDeletePost(AsyncWebServerRequest *request, JsonVariant &json);
+
     // Static handler wrapper needed for AsyncWebServer library with JSON body
     static void handleTriggerPostWrapper(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
 };

@@ -92,7 +92,12 @@ void SerialCLI::parseAndExecute() {
         Serial.println("  setpin <gpio>      - Set master output pin (0-33)");
         Serial.println("  indicator <gpio>   - Set status indicator pin (0=disabled)");
         Serial.println("  status             - Show current status");
-        // Add more help text
+        Serial.println("Performance & Presets:");
+        Serial.println("  metrics            - Show performance metrics");
+        Serial.println("  savepreset <name>  - Save current config as preset");
+        Serial.println("  loadpreset <name>  - Load and apply a preset");
+        Serial.println("  delpreset <name>   - Delete a preset");
+        Serial.println("  listpresets        - List all saved presets")
 
     } else if (_inputBuffer == "start") {
         cmd.type = SIG_CMD_START;
@@ -294,13 +299,98 @@ void SerialCLI::parseAndExecute() {
         } else {
             Serial.println("Error: Failed to retrieve status");
         }
+    } else if (_inputBuffer == "metrics") {
+        // Display performance metrics
+        PerformanceMetrics metrics;
+        _controller.getPerformanceMetrics(metrics);
+
+        Serial.println("=== Performance Metrics ===");
+        Serial.printf("  Total Commands: %llu\n", metrics.totalCommands);
+        Serial.printf("  Avg Latency: %llu us\n", metrics.avgCommandLatencyUs);
+        Serial.printf("  Max Latency: %llu us\n", metrics.maxCommandLatencyUs);
+        Serial.printf("  Min Latency: %llu us\n",
+            (metrics.minCommandLatencyUs == UINT64_MAX) ? 0 : metrics.minCommandLatencyUs);
+        Serial.printf("  Free Heap: %lu bytes\n", metrics.freeHeap);
+        Serial.printf("  Min Free Heap: %lu bytes\n",
+            (metrics.minFreeHeap == UINT32_MAX) ? 0 : metrics.minFreeHeap);
+        Serial.printf("  Uptime: %llu ms (%.2f hours)\n",
+            metrics.uptimeMs, metrics.uptimeMs / 3600000.0);
+        Serial.printf("  Total Events: %llu\n", metrics.totalEvents);
+        Serial.printf("  Failed Events: %llu\n", metrics.failedEvents);
+        if (metrics.totalEvents > 0) {
+            float successRate = (metrics.totalEvents - metrics.failedEvents) * 100.0 / metrics.totalEvents;
+            Serial.printf("  Event Success Rate: %.2f%%\n", successRate);
+        }
+        Serial.println("===========================");
+    } else if (_inputBuffer.startsWith("savepreset ")) {
+        // Example: savepreset myconfig
+        char name[20];
+        int argsParsed = sscanf(_inputBuffer.c_str(), "savepreset %19s", name);
+        if (argsParsed == 1) {
+            if (strlen(name) > 15) {
+                Serial.println("Error: Preset name too long (max 15 chars)");
+            } else if (_controller.savePreset(name)) {
+                Serial.printf("Preset '%s' saved successfully\n", name);
+            } else {
+                Serial.printf("Error: Failed to save preset '%s'\n", name);
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: savepreset <name>");
+        }
+    } else if (_inputBuffer.startsWith("loadpreset ")) {
+        // Example: loadpreset myconfig
+        char name[20];
+        int argsParsed = sscanf(_inputBuffer.c_str(), "loadpreset %19s", name);
+        if (argsParsed == 1) {
+            if (_controller.loadPreset(name)) {
+                Serial.printf("Preset '%s' loaded and applied successfully\n", name);
+            } else {
+                Serial.printf("Error: Preset '%s' not found or failed to load\n", name);
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: loadpreset <name>");
+        }
+    } else if (_inputBuffer.startsWith("delpreset ")) {
+        // Example: delpreset myconfig
+        char name[20];
+        int argsParsed = sscanf(_inputBuffer.c_str(), "delpreset %19s", name);
+        if (argsParsed == 1) {
+            if (_controller.deletePreset(name)) {
+                Serial.printf("Preset '%s' deleted successfully\n", name);
+            } else {
+                Serial.printf("Error: Preset '%s' not found or failed to delete\n", name);
+            }
+        } else {
+            Serial.println("Error: Invalid format. Use: delpreset <name>");
+        }
+    } else if (_inputBuffer == "listpresets") {
+        // List all saved presets
+        char buffer[512];
+        int count = _controller.listPresets(buffer, sizeof(buffer));
+
+        Serial.println("=== Saved Presets ===");
+        if (count > 0) {
+            Serial.printf("Found %d preset(s):\n", count);
+            // Parse and display (format: "name1,name2,name3")
+            char* token = strtok(buffer, ",");
+            int idx = 1;
+            while (token != NULL) {
+                Serial.printf("  %d. %s\n", idx++, token);
+                token = strtok(NULL, ",");
+            }
+        } else {
+            Serial.println("  No presets saved");
+        }
+        Serial.println("====================");
     } else {
         Serial.printf("Error: Unknown command '%s'\n", _inputBuffer.c_str());
     }
 
     if (commandSent) {
         Serial.println("OK: Command sent to engine.");
-    } else if (_inputBuffer != "help" && _inputBuffer != "status") { // Don't print error for help/status commands
+    } else if (_inputBuffer != "help" && _inputBuffer != "status" && _inputBuffer != "metrics" &&
+               _inputBuffer != "listpresets" && !_inputBuffer.startsWith("savepreset ") &&
+               !_inputBuffer.startsWith("loadpreset ") && !_inputBuffer.startsWith("delpreset ")) {
         // Error message was printed by sendCommand or parsing logic
         // Consider adding more specific error feedback here if needed
          Serial.println("Error: Failed to send command (queue full? invalid?).");

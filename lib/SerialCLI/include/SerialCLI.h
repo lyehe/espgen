@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "ISignalController.h" // Application layer interface (Clean Architecture)
 #include "signal_iface.h"      // For SignalCmd struct
+#include "PerformanceMonitor.h" // For PerformanceMetrics struct
 
 /**
  * @brief Serial CLI (Presentation Layer)

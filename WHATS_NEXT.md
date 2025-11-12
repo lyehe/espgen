@@ -1,7 +1,40 @@
 # What's Next - Development Roadmap
 
-**Current Status**: ✅ Clean Architecture + Comprehensive API/Frontend Complete
-**Last Update**: 2025-11-09
+**Current Status**: ✅ Clean Architecture + Comprehensive API/Frontend + Performance Metrics + Presets Complete
+**Last Update**: 2025-11-12
+
+---
+
+## 🎉 Recently Completed (2025-11-12)
+
+### Performance Monitoring System
+- ✅ PerformanceMonitor class integrated into CommandDispatcher
+- ✅ Command latency tracking (min/avg/max)
+- ✅ Memory usage monitoring (heap tracking)
+- ✅ Event publishing success rate tracking
+- ✅ GET /api/metrics endpoint with comprehensive metrics
+- ✅ `metrics` CLI command with formatted output
+
+### Configuration Presets
+- ✅ IPresetService interface added to application layer
+- ✅ SignalEngine preset methods (save/load/delete/exists/list)
+- ✅ GET /api/presets - List all presets
+- ✅ POST /api/preset/save - Save configuration
+- ✅ POST /api/preset/load - Load configuration
+- ✅ POST /api/preset/delete - Delete preset
+- ✅ CLI commands: savepreset, loadpreset, delpreset, listpresets
+
+### Infrastructure Improvements
+- ✅ WebFacade LittleFS error handling with automatic formatting
+- ✅ Complete SOLID compliance (DIP with IPulseGenerator)
+- ✅ SignalStatus_t fully populated with hardware metrics
+
+**Files Modified**:
+- ApiRouter.h/cpp (5 new endpoints)
+- SerialCLI.cpp (5 new commands)
+- WebFacade.cpp (error handling)
+- SignalEngine.h/cpp (preset integration)
+- ISignalController.h (new service interfaces)
 
 ---
 
@@ -202,37 +235,43 @@ void test_start_command_records_parameters() {
 
 ---
 
-### 5. **Performance Optimization** 🟢 LOW PRIORITY (Unless Issues Found)
+### 5. **Performance Metrics** ✅ COMPLETE
 
-**What to Measure**:
-- Command processing latency
-- WebSocket update frequency
-- Memory usage (heap fragmentation)
-- Task stack usage
-- Command queue depth
+**Status**: Fully implemented with monitoring and API/CLI access
 
-**Tools**:
-```cpp
-// Add to SignalEngine.cpp
-#define ENABLE_PERFORMANCE_METRICS
+**Completed Features**:
 
-#if ENABLE_PERFORMANCE_METRICS
-static uint32_t cmdProcessTime = 0;
-static uint32_t maxCmdTime = 0;
+**Backend** (PerformanceMonitor + CommandDispatcher):
+- ✅ PerformanceMonitor class tracks command latency (min/avg/max)
+- ✅ Memory usage monitoring (current/minimum free heap)
+- ✅ Event publishing success rate tracking
+- ✅ System uptime tracking
+- ✅ Integrated into CommandDispatcher for automatic timing
 
-void SignalEngine::cmdDispatcherTask() {
-    uint32_t start = micros();
-    // ... process command ...
-    cmdProcessTime = micros() - start;
-    if (cmdProcessTime > maxCmdTime) {
-        maxCmdTime = cmdProcessTime;
-        Serial.printf("New max cmd time: %lu us\n", maxCmdTime);
-    }
-}
-#endif
-```
+**API Endpoint** (ApiRouter):
+- ✅ `GET /api/metrics` - Returns comprehensive performance metrics
+  - total_commands, avg_latency_us, max_latency_us, min_latency_us
+  - free_heap, min_free_heap
+  - uptime_ms
+  - total_events, failed_events, event_success_rate
 
-**Estimated Time**: 2-4 hours (if needed)
+**CLI Command** (SerialCLI):
+- ✅ `metrics` - Display formatted performance metrics with uptime in hours
+
+**Metrics Collected**:
+- ✅ Command processing latency (min/avg/max)
+- ✅ Memory usage (current/minimum heap)
+- ✅ Event publishing statistics
+- ✅ System uptime
+
+**What's Next** (Optional Performance Optimization):
+If performance issues are found during testing, consider:
+- WebSocket update frequency optimization
+- Task stack usage analysis
+- Command queue depth monitoring
+- Heap fragmentation analysis
+
+**Estimated Time for Optimization**: 2-4 hours (if needed)
 
 ---
 
@@ -272,43 +311,41 @@ setInterval(() => {
 
 ---
 
-### 7. **Configuration Presets** 🟢 POWER USER FEATURE
+### 7. **Configuration Presets** ✅ COMPLETE
 
-**What to Add**:
+**Status**: Fully implemented with API and CLI support
 
-**Backend**:
-```cpp
-// Add to common/signal_iface.h
-struct SignalPreset {
-    char name[32];
-    SignalCmd config;
-    uint8_t channelCount;
-    PulseChannelConfig_t channels[MAX_PULSE_CHANNELS];
-};
+**Completed Features**:
 
-// Save/load with Preferences
-bool savePreset(uint8_t slot, const SignalPreset& preset);
-bool loadPreset(uint8_t slot, SignalPreset& preset);
-```
+**Backend** (SignalPersistence + SignalEngine):
+- ✅ NVS-based preset storage with name-based lookup
+- ✅ SignalEngine preset methods: savePreset(), loadPreset(), deletePreset(), presetExists(), listPresets()
+- ✅ IPresetService interface in application layer
+- ✅ SignalControllerAdapter implementation
 
-**API**:
-```
-POST /api/preset/save
-GET /api/preset/load/{slot}
-GET /api/presets
-```
+**API Endpoints** (ApiRouter):
+- ✅ `GET /api/presets` - List all saved presets
+- ✅ `POST /api/preset/save` - Save current configuration as preset (JSON: `{"name": "preset1"}`)
+- ✅ `POST /api/preset/load` - Load and apply preset (JSON: `{"name": "preset1"}`)
+- ✅ `POST /api/preset/delete` - Delete preset (JSON: `{"name": "preset1"}`)
 
-**Frontend**:
+**CLI Commands** (SerialCLI):
+- ✅ `savepreset <name>` - Save current config as preset
+- ✅ `loadpreset <name>` - Load and apply a preset
+- ✅ `delpreset <name>` - Delete a preset
+- ✅ `listpresets` - List all saved presets
+
+**What's Still Needed** (Optional Frontend Integration):
 ```html
-<select id="preset-selector">
-    <option value="0">Custom</option>
-    <option value="1">Quadrature 1kHz</option>
-    <option value="2">Three-Phase 60Hz</option>
-    <option value="3">Camera Trigger</option>
+<!-- Add to index.html -->
+<select id="preset-selector" onchange="loadPreset(this.value)">
+    <option value="">-- Select Preset --</option>
+    <!-- Populated dynamically from GET /api/presets -->
 </select>
+<button onclick="savePreset()">Save Current Config</button>
 ```
 
-**Estimated Time**: 4-5 hours
+**Estimated Time for Frontend**: 1-2 hours
 
 ---
 

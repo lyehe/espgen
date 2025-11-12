@@ -27,8 +27,23 @@ bool WebFacade::initLittleFS()
     if (!LittleFS.begin())
     {
         Serial.println("ERROR: Failed to mount LittleFS");
-        // TODO: Handle filesystem formatting or error indication
-        return false;
+        Serial.println("Attempting to format LittleFS...");
+
+        // Attempt to format the filesystem
+        if (!LittleFS.format()) {
+            Serial.println("ERROR: LittleFS format failed!");
+            return false;
+        }
+
+        Serial.println("LittleFS formatted successfully");
+
+        // Try mounting again after format
+        if (!LittleFS.begin()) {
+            Serial.println("ERROR: Failed to mount LittleFS after format");
+            return false;
+        }
+
+        Serial.println("LittleFS mounted successfully after format");
     }
     Serial.println("LittleFS mounted successfully. Contents:");
     File root = LittleFS.open("/");

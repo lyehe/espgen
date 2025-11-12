@@ -229,6 +229,139 @@ void ApiRouter::registerRoutes() {
     _server.on("/api/sync", HTTP_POST, [this](AsyncWebServerRequest *request){
         this->handleSyncPost(request);
     });
+
+    // GET /api/metrics - Get performance metrics
+    _server.on("/api/metrics", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handleMetricsGet(request);
+    });
+
+    // GET /api/presets - List all presets
+    _server.on("/api/presets", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handlePresetsListGet(request);
+    });
+
+    // POST /api/preset/save - Save current configuration as preset
+    _server.on("/api/preset/save", HTTP_POST,
+        [this](AsyncWebServerRequest *request){
+            if (!request->_tempObject) {
+                request->_tempObject = new RequestBodyState();
+            }
+        },
+        NULL, // No file upload
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+            if (state) {
+                if (index == 0) {
+                    state->buffer.clear();
+                    state->buffer.reserve(total + 1);
+                }
+                state->buffer.insert(state->buffer.end(), data, data + len);
+            }
+
+            if (index + len == total) {
+                Serial.printf("Received POST /api/preset/save, Body Size: %d\n", total);
+                if (state) {
+                    state->buffer.push_back(0); // Null-terminate
+
+                    JsonDocument jsonDoc;
+                    DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                    if (error) {
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                    } else {
+                        JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                        this->handlePresetSavePost(request, jsonVariant);
+                    }
+
+                    delete state;
+                    request->_tempObject = nullptr;
+                }
+            }
+        });
+
+    // POST /api/preset/load - Load a preset
+    _server.on("/api/preset/load", HTTP_POST,
+        [this](AsyncWebServerRequest *request){
+            if (!request->_tempObject) {
+                request->_tempObject = new RequestBodyState();
+            }
+        },
+        NULL, // No file upload
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+            if (state) {
+                if (index == 0) {
+                    state->buffer.clear();
+                    state->buffer.reserve(total + 1);
+                }
+                state->buffer.insert(state->buffer.end(), data, data + len);
+            }
+
+            if (index + len == total) {
+                Serial.printf("Received POST /api/preset/load, Body Size: %d\n", total);
+                if (state) {
+                    state->buffer.push_back(0); // Null-terminate
+
+                    JsonDocument jsonDoc;
+                    DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                    if (error) {
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                    } else {
+                        JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                        this->handlePresetLoadPost(request, jsonVariant);
+                    }
+
+                    delete state;
+                    request->_tempObject = nullptr;
+                }
+            }
+        });
+
+    // DELETE /api/preset/delete - Delete a preset
+    _server.on("/api/preset/delete", HTTP_POST,  // Using POST for compatibility (DELETE with body can be problematic)
+        [this](AsyncWebServerRequest *request){
+            if (!request->_tempObject) {
+                request->_tempObject = new RequestBodyState();
+            }
+        },
+        NULL, // No file upload
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+            if (state) {
+                if (index == 0) {
+                    state->buffer.clear();
+                    state->buffer.reserve(total + 1);
+                }
+                state->buffer.insert(state->buffer.end(), data, data + len);
+            }
+
+            if (index + len == total) {
+                Serial.printf("Received POST /api/preset/delete, Body Size: %d\n", total);
+                if (state) {
+                    state->buffer.push_back(0); // Null-terminate
+
+                    JsonDocument jsonDoc;
+                    DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                    if (error) {
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                    } else {
+                        JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                        this->handlePresetDeletePost(request, jsonVariant);
+                    }
+
+                    delete state;
+                    request->_tempObject = nullptr;
+                }
+            }
+        });
 }
 
 // Handler implementation for GET /api/discovery
@@ -563,5 +696,126 @@ void ApiRouter::handleSyncPost(AsyncWebServerRequest *request) {
     } else {
         request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
         Serial.println("API: Command queue full for sync.");
+    }
+}
+
+// Handler implementation for GET /api/metrics
+void ApiRouter::handleMetricsGet(AsyncWebServerRequest *request) {
+    PerformanceMetrics metrics;
+    _controller.getPerformanceMetrics(metrics);
+
+    JsonDocument doc;
+    doc["total_commands"] = metrics.totalCommands;
+    doc["avg_latency_us"] = metrics.avgCommandLatencyUs;
+    doc["max_latency_us"] = metrics.maxCommandLatencyUs;
+    doc["min_latency_us"] = (metrics.minCommandLatencyUs == UINT64_MAX) ? 0 : metrics.minCommandLatencyUs;
+    doc["free_heap"] = metrics.freeHeap;
+    doc["min_free_heap"] = (metrics.minFreeHeap == UINT32_MAX) ? 0 : metrics.minFreeHeap;
+    doc["uptime_ms"] = metrics.uptimeMs;
+    doc["total_events"] = metrics.totalEvents;
+    doc["failed_events"] = metrics.failedEvents;
+    doc["event_success_rate"] = (metrics.totalEvents > 0) ?
+        ((metrics.totalEvents - metrics.failedEvents) * 100.0 / metrics.totalEvents) : 100.0;
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Sent GET /api/metrics response");
+}
+
+// Handler implementation for GET /api/presets
+void ApiRouter::handlePresetsListGet(AsyncWebServerRequest *request) {
+    char buffer[512];  // Buffer to hold preset list
+    int count = _controller.listPresets(buffer, sizeof(buffer));
+
+    JsonDocument doc;
+    doc["count"] = count;
+
+    if (count > 0) {
+        JsonArray presets = doc["presets"].to<JsonArray>();
+
+        // Parse the buffer (format: "name1,name2,name3")
+        char* token = strtok(buffer, ",");
+        while (token != NULL) {
+            presets.add(token);
+            token = strtok(NULL, ",");
+        }
+    } else {
+        doc["presets"] = JsonArray();  // Empty array
+    }
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.printf("Sent GET /api/presets response (found %d presets)\n", count);
+}
+
+// Handler implementation for POST /api/preset/save
+void ApiRouter::handlePresetSavePost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["name"].is<const char*>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'name' field\"}");
+        return;
+    }
+
+    const char* name = obj["name"];
+
+    // Validate name length (max 15 chars as per SignalPersistence)
+    if (strlen(name) > 15) {
+        request->send(400, "application/json", "{\"error\":\"Preset name too long (max 15 chars)\"}");
+        return;
+    }
+
+    Serial.printf("API: Saving preset '%s'\n", name);
+
+    if (_controller.savePreset(name)) {
+        request->send(200, "application/json", "{\"status\":\"preset saved\"}");
+        Serial.printf("API: Preset '%s' saved successfully\n", name);
+    } else {
+        request->send(500, "application/json", "{\"error\":\"Failed to save preset\"}");
+        Serial.printf("API: Failed to save preset '%s'\n", name);
+    }
+}
+
+// Handler implementation for POST /api/preset/load
+void ApiRouter::handlePresetLoadPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["name"].is<const char*>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'name' field\"}");
+        return;
+    }
+
+    const char* name = obj["name"];
+    Serial.printf("API: Loading preset '%s'\n", name);
+
+    if (_controller.loadPreset(name)) {
+        request->send(200, "application/json", "{\"status\":\"preset loaded and applied\"}");
+        Serial.printf("API: Preset '%s' loaded successfully\n", name);
+    } else {
+        request->send(404, "application/json", "{\"error\":\"Preset not found or failed to load\"}");
+        Serial.printf("API: Failed to load preset '%s'\n", name);
+    }
+}
+
+// Handler implementation for POST /api/preset/delete
+void ApiRouter::handlePresetDeletePost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["name"].is<const char*>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'name' field\"}");
+        return;
+    }
+
+    const char* name = obj["name"];
+    Serial.printf("API: Deleting preset '%s'\n", name);
+
+    if (_controller.deletePreset(name)) {
+        request->send(200, "application/json", "{\"status\":\"preset deleted\"}");
+        Serial.printf("API: Preset '%s' deleted successfully\n", name);
+    } else {
+        request->send(404, "application/json", "{\"error\":\"Preset not found or failed to delete\"}");
+        Serial.printf("API: Failed to delete preset '%s'\n", name);
     }
 }
