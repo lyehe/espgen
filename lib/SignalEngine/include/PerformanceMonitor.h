@@ -3,14 +3,15 @@
 
 #include <Arduino.h>
 #include "esp_timer.h"
+#include "IPerformanceMonitor.h"
 
 /**
- * @brief Simple performance monitoring for signal engine
+ * @brief Concrete performance monitoring implementation
  *
  * Tracks command processing times, memory usage, and other metrics.
  * Useful for diagnostics and performance optimization.
  *
- * Design Pattern: Singleton (optional) or standalone utility
+ * Design Pattern: Implements IPerformanceMonitor interface for dependency injection
  */
 
 // Performance metrics structure
@@ -46,58 +47,18 @@ struct PerformanceMetrics {
     {}
 };
 
-class PerformanceMonitor {
+class PerformanceMonitor : public IPerformanceMonitor {
 public:
     PerformanceMonitor();
 
-    /**
-     * @brief Start timing a command
-     *
-     * Call this at the beginning of command processing.
-     *
-     * @return Start timestamp in microseconds
-     */
-    uint64_t startCommandTiming();
-
-    /**
-     * @brief End timing a command and update statistics
-     *
-     * Call this at the end of command processing.
-     *
-     * @param startTime Start timestamp from startCommandTiming()
-     */
-    void endCommandTiming(uint64_t startTime);
-
-    /**
-     * @brief Record an event publication
-     *
-     * @param success true if event was published successfully
-     */
-    void recordEvent(bool success);
-
-    /**
-     * @brief Update memory usage statistics
-     *
-     * Samples current heap usage and tracks minimum.
-     */
-    void updateMemoryStats();
-
-    /**
-     * @brief Get current performance metrics
-     *
-     * @param metrics Output parameter to receive metrics
-     */
-    void getMetrics(PerformanceMetrics& metrics);
-
-    /**
-     * @brief Reset all statistics
-     */
-    void reset();
-
-    /**
-     * @brief Print performance metrics to Serial
-     */
-    void printMetrics();
+    // IPerformanceMonitor interface implementation
+    uint64_t startCommandTiming() override;
+    void endCommandTiming(uint64_t startTime) override;
+    void recordEvent(bool success) override;
+    void updateMemoryStats() override;
+    void getMetrics(PerformanceMetrics& metrics) override;
+    void reset() override;
+    void printMetrics() override;
 
 private:
     PerformanceMetrics _metrics;

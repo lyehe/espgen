@@ -6,19 +6,18 @@
 #include "OTAService.h" // Include OTAService for integration
 
 // Constructor implementation - Clean Architecture wiring
-// This is the Composition Root where dependency injection happens
-WebFacade::WebFacade(SignalEngine& engine) :
-    _engine(engine),               // Domain layer reference
-    _adapter(engine),              // Create adapter (Application layer -> Domain layer)
-    _server(80),                   // Initialize the server
-    _wifiMgr(),                    // Initialize WifiMgr
-    _apiRouter(_adapter, _server), // Inject adapter into ApiRouter (Dependency Inversion!)
-    _wsHub(_server),               // Initialize WebSocketHub, passing the server
-    _otaService()                  // Initialize OTAService
+// WebFacade is pure presentation layer - depends only on interfaces
+WebFacade::WebFacade(ISignalController& controller) :
+    _controller(controller),           // Application layer interface (Clean Architecture)
+    _server(80),                       // Initialize the server
+    _wifiMgr(),                        // Initialize WifiMgr
+    _apiRouter(_controller, _server),  // Inject interface into ApiRouter (Dependency Inversion!)
+    _wsHub(_server),                   // Initialize WebSocketHub, passing the server
+    _otaService()                      // Initialize OTAService
 {
-    // Constructor body (if needed)
-    // Note: ApiRouter now depends on ISignalController interface, not concrete SignalEngine
-    // This enables testing with mock controllers and follows Clean Architecture
+    // WebFacade is now a pure presentation layer component
+    // It knows nothing about domain layer (SignalEngine)
+    // Composition happens in main.cpp where adapter is created
 }
 
 // Initialize LittleFS

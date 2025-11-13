@@ -18,7 +18,8 @@
 #endif
 
 #if BUILD_WEB
-#include "WebFacade.h" // WebFacade handles its own adapter internally
+#include "WebFacade.h"
+#include "SignalControllerAdapter.h" // Application layer adapter (Clean Architecture)
 #endif
 
 // Button Configuration
@@ -44,7 +45,8 @@ SerialCLI serialCLI(cliAdapter); // CLI depends on interface, not concrete class
 #endif
 
 #if BUILD_WEB
-WebFacade webFacade(signalEngine); // WebFacade creates its own adapter internally
+SignalControllerAdapter webAdapter(signalEngine); // Adapter for Web (Composition Root pattern)
+WebFacade webFacade(webAdapter); // WebFacade depends on interface, not concrete class
 #endif
 
 // Button Tap Handler Function

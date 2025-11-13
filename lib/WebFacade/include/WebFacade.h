@@ -5,34 +5,31 @@
 #include <ESPAsyncWebServer.h>
 #include "WifiMgr.h"                    // WiFi Manager
 #include "ISignalController.h"          // Application layer interface (Clean Architecture)
-#include "SignalControllerAdapter.h"    // Adapter for existing SignalEngine
-#include "SignalEngine.h"               // Domain layer (for adapter)
 #include "ApiRouter.h"                  // API Router
 #include "WebSocketHub.h"               // WebSocket Hub
 #include "OTAService.h"                 // OTA Service
 
 /**
- * @brief Web Facade (Composition Root)
+ * @brief Web Facade (Presentation Layer)
  *
- * Wires together all components following Clean Architecture principles.
- * This is where dependency injection happens.
+ * Wires together web-related components following Clean Architecture.
+ * Depends ONLY on application layer interfaces, not domain layer.
  *
  * Architecture:
- * WebFacade -> SignalControllerAdapter -> SignalEngine
- *           -> ApiRouter -> ISignalController (interface)
+ * WebFacade -> ApiRouter -> ISignalController (interface)
  *           -> WebSocketHub
  *           -> OTAService
+ *
+ * Note: Composition root (adapter creation) happens in main.cpp
  */
 class WebFacade {
 public:
-    // Constructor requires SignalEngine (domain layer)
-    // Creates adapter and injects it into presentation layer
-    WebFacade(SignalEngine& engine);
+    // Constructor requires application layer interface (Clean Architecture)
+    WebFacade(ISignalController& controller);
     bool begin(); // Initialize web facade - returns false on critical failure
 
 private:
-    SignalEngine& _engine;              // Domain layer reference
-    SignalControllerAdapter _adapter;   // Application layer adapter (bridges domain & presentation)
+    ISignalController& _controller;     // Application layer interface (Clean Architecture)
     AsyncWebServer _server;             // Web server instance
     WifiMgr _wifiMgr;                   // WiFi Manager instance
     ApiRouter _apiRouter;               // API Router (depends on ISignalController)

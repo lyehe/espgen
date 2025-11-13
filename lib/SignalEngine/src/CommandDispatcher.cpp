@@ -13,13 +13,15 @@ CommandDispatcher::CommandDispatcher(
     SignalState& state,
     SignalPersistence& persistence,
     TimingController& timingController,
-    SignalEventPublisher& eventPublisher
+    SignalEventPublisher& eventPublisher,
+    IPerformanceMonitor& perfMonitor
 ) :
     _pulseGen(pulseGen),
     _state(state),
     _persistence(persistence),
     _timingController(timingController),
     _eventPublisher(eventPublisher),
+    _perfMonitor(perfMonitor),
     _commandQueue(NULL),
     _taskHandle(NULL),
     _initialized(false)

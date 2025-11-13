@@ -24,14 +24,16 @@ SignalEngine::SignalEngine(IPulseGenerator& pulseGen) :
     _persistence(),
     _timingController(),
     _eventPublisher(),
-    _commandDispatcher(pulseGen, _state, _persistence, _timingController, _eventPublisher),
+    _perfMonitor(),
+    _commandDispatcher(pulseGen, _state, _persistence, _timingController, _eventPublisher, _perfMonitor),
     _initialized(false)
 {
     // State initialization is handled by SignalState constructor
     // Persistence initialization is handled by SignalPersistence constructor
     // Timing initialization is handled by TimingController constructor
     // Event publishing initialization is handled by SignalEventPublisher constructor
-    // Command dispatcher initialization with injected dependencies
+    // Performance monitoring initialization is handled by PerformanceMonitor constructor
+    // Command dispatcher initialization with injected dependencies (including IPerformanceMonitor)
 }
 
 bool SignalEngine::begin() {

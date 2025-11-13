@@ -6,6 +6,7 @@
 #include "SignalPersistence.h"
 #include "TimingController.h"
 #include "SignalEventPublisher.h"
+#include "PerformanceMonitor.h"
 #include "CommandDispatcher.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
@@ -121,6 +122,9 @@ private:
 
     // ESP event publishing
     SignalEventPublisher _eventPublisher;
+
+    // Performance monitoring
+    PerformanceMonitor _perfMonitor;
 
     // Command queue and dispatcher
     CommandDispatcher _commandDispatcher;

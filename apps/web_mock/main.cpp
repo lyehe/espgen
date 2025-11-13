@@ -5,11 +5,13 @@
 #include "PulseGenerator.h" // Concrete implementation
 #include "SignalEngine.h"   // Include the SignalEngine library
 #include "WebFacade.h"      // Include the WebFacade library
+#include "SignalControllerAdapter.h" // Application layer adapter (Clean Architecture)
 
 // Global instances
 PulseGenerator pulseGen;               // Hardware implementation
 SignalEngine signalEngine(pulseGen);   // Inject dependency
-WebFacade webFacade(signalEngine);     // Create WebFacade, passing the engine
+SignalControllerAdapter adapter(signalEngine); // Adapter bridges domain to application layer
+WebFacade webFacade(adapter);          // WebFacade depends on interface (Clean Architecture)
 
 void setup() {
     Serial.begin(115200);

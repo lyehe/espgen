@@ -6,7 +6,7 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "signal_iface.h"
-#include "PerformanceMonitor.h"
+#include "IPerformanceMonitor.h"
 
 // Forward declarations
 class IPulseGenerator;
@@ -14,6 +14,7 @@ class SignalState;
 class SignalPersistence;
 class TimingController;
 class SignalEventPublisher;
+struct PerformanceMetrics;
 
 /**
  * @brief Manages command queue and dispatches commands to appropriate handlers.
@@ -40,20 +41,22 @@ public:
      * @brief Constructor with dependency injection
      *
      * All dependencies are injected to maintain clean architecture and
-     * enable testability. Uses IPulseGenerator interface for DIP compliance.
+     * enable testability. Uses interfaces for DIP compliance.
      *
      * @param pulseGen Reference to IPulseGenerator for hardware control
      * @param state Reference to SignalState for state management
      * @param persistence Reference to SignalPersistence for NVS operations
      * @param timingController Reference to TimingController for timing operations
      * @param eventPublisher Reference to SignalEventPublisher for event publishing
+     * @param perfMonitor Reference to IPerformanceMonitor for metrics tracking
      */
     CommandDispatcher(
         IPulseGenerator& pulseGen,
         SignalState& state,
         SignalPersistence& persistence,
         TimingController& timingController,
-        SignalEventPublisher& eventPublisher
+        SignalEventPublisher& eventPublisher,
+        IPerformanceMonitor& perfMonitor
     );
 
     ~CommandDispatcher();
@@ -93,15 +96,13 @@ public:
     void getPerformanceMetrics(PerformanceMetrics& metrics);
 
 private:
-    // Injected dependencies (using interface for DIP compliance)
+    // Injected dependencies (using interfaces for DIP compliance)
     IPulseGenerator& _pulseGen;
     SignalState& _state;
     SignalPersistence& _persistence;
     TimingController& _timingController;
     SignalEventPublisher& _eventPublisher;
-
-    // Performance monitoring
-    PerformanceMonitor _perfMonitor;
+    IPerformanceMonitor& _perfMonitor;  // Interface for testability
 
     // FreeRTOS resources
     QueueHandle_t _commandQueue;
