@@ -285,7 +285,7 @@ void SerialCLI::parseAndExecute() {
     } else if (_inputBuffer == "status") {
         // Display current status
         SignalStatus_t status;
-        SignalError err = _controller.getCurrentStatus(status);
+        SignalError err = _controller.getStatus(status);
         if (err == SIG_OK) {
             Serial.println("=== Current Status ===");
             Serial.printf("  Running: %s\n", status.isRunning ? "YES" : "NO");

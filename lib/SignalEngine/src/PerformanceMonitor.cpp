@@ -16,23 +16,17 @@ void PerformanceMonitor::endCommandTiming(uint64_t startTime) {
     uint64_t latency = endTime - startTime;
 
     // Update statistics
-    _totalCommands++;
+    _metrics.totalCommands++;
     _totalLatencyUs += latency;
-    _avgCommandLatencyUs = _totalLatencyUs / _totalCommands;
+    _metrics.avgCommandLatencyUs = _totalLatencyUs / _metrics.totalCommands;
 
-    if (latency > _maxCommandLatencyUs) {
-        _maxCommandLatencyUs = latency;
+    if (latency > _metrics.maxCommandLatencyUs) {
+        _metrics.maxCommandLatencyUs = latency;
     }
 
-    if (latency < _minCommandLatencyUs) {
-        _minCommandLatencyUs = latency;
+    if (latency < _metrics.minCommandLatencyUs) {
+        _metrics.minCommandLatencyUs = latency;
     }
-
-    // Update metrics structure
-    _metrics.totalCommands = _totalCommands;
-    _metrics.avgCommandLatencyUs = _avgCommandLatencyUs;
-    _metrics.maxCommandLatencyUs = _maxCommandLatencyUs;
-    _metrics.minCommandLatencyUs = _minCommandLatencyUs;
 }
 
 void PerformanceMonitor::recordEvent(bool success) {
@@ -65,10 +59,6 @@ void PerformanceMonitor::getMetrics(PerformanceMetrics& metrics) {
 void PerformanceMonitor::reset() {
     _metrics = PerformanceMetrics();
     _totalLatencyUs = 0;
-    _totalCommands = 0;
-    _avgCommandLatencyUs = 0;
-    _maxCommandLatencyUs = 0;
-    _minCommandLatencyUs = UINT64_MAX;
     _startTimeMs = millis();
 }
 

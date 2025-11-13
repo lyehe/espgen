@@ -1,5 +1,6 @@
 #include "ApiRouter.h"
 #include "signal_iface.h" // Ensure SigCmdType is visible
+#include "PerformanceMonitor.h" // For PerformanceMetrics struct
 #include <vector> // Needed for temporary buffer
 
 // Define the expected JSON buffer size
@@ -380,10 +381,10 @@ void ApiRouter::handleDiscoveryGet(AsyncWebServerRequest *request) {
 // Handler implementation for GET /api/status
 void ApiRouter::handleStatusGet(AsyncWebServerRequest *request) {
     SignalStatus_t currentStatus;
-    SignalError err = _controller.getCurrentStatus(currentStatus);
+    SignalError err = _controller.getStatus(currentStatus);
 
     if (err != SIG_OK) {
-        // Handle potential errors from getCurrentStatus if any are added later
+        // Handle potential errors from getStatus if any are added later
         Serial.printf("Error getting signal status: %d\n", err);
         request->send(500, "application/json", "{\"error\":\"Failed to get engine status\"}");
         return;
