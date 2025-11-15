@@ -419,7 +419,7 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
     }
 
     const char* commandStr = obj["command"];
-    SignalCmd cmd = {0}; // Zero-initialize entire structure
+    SignalCmd cmd = {}; // Zero-initialize entire structure
     bool commandValid = true;
 
     // Parse channel (default to 0)
@@ -569,7 +569,7 @@ void ApiRouter::handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVaria
 
     // Indicator pin can be 0 (disabled) or any valid GPIO
     // Note: We don't restrict to 12-19 since indicator is just a simple GPIO output
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_SET_INDICATOR;
     cmd.pin = (uint8_t)pin;
     cmd.paramMode = 0; // No special parameters needed
@@ -606,7 +606,7 @@ void ApiRouter::handleChannelPost(AsyncWebServerRequest *request, JsonVariant &j
         return;
     }
 
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_CONFIG_CHANNEL;
     cmd.channel = (uint8_t)channel;
 
@@ -685,7 +685,7 @@ void ApiRouter::handleChannelsGet(AsyncWebServerRequest *request) {
 
 // Handler implementation for POST /api/sync
 void ApiRouter::handleSyncPost(AsyncWebServerRequest *request) {
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_SYNC;
     cmd.paramMode = 0; // SYNC doesn't need parameters
 

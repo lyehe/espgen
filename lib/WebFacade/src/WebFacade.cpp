@@ -1,5 +1,6 @@
 #include "WebFacade.h"
 #include <Arduino.h> // For Serial prints
+#include <WiFi.h>    // For WiFi functionality
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h> // For mDNS
@@ -151,7 +152,7 @@ bool WebFacade::begin()
     _otaService.begin(&_server);
 
     // Initialize mDNS (optional but recommended)
-    if (WiFi.getMode() == WIFI_STA)
+    if (WiFi.getMode() == WIFI_MODE_STA)
     { // Only run mDNS in STA mode
         if (MDNS.begin("trigger"))
         { // Hostname 'trigger.local'

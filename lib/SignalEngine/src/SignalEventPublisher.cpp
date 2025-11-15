@@ -71,7 +71,7 @@ bool SignalEventPublisher::postEvent(SigEvtId eventId, const SignalEvtData& even
     esp_err_t post_err = esp_event_post(
         SIGNAL_EVENTS,
         eventId,
-        &eventData,
+        (void*)&eventData,
         sizeof(eventData),
         pdMS_TO_TICKS(EVENT_POST_TIMEOUT_MS)
     );

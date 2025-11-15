@@ -66,7 +66,7 @@ void SerialCLI::parseAndExecute() {
     _inputBuffer.toLowerCase(); // Convert to lowercase for case-insensitive matching
     Serial.printf("Processing: [%s]\n", _inputBuffer.c_str());
 
-    SignalCmd cmd = {0}; // Zero-initialize command structure
+    SignalCmd cmd = {}; // Zero-initialize command structure
     bool commandSent = false;
 
     // Simple parsing logic (replace with more robust parser later)
@@ -97,7 +97,7 @@ void SerialCLI::parseAndExecute() {
         Serial.println("  savepreset <name>  - Save current config as preset");
         Serial.println("  loadpreset <name>  - Load and apply a preset");
         Serial.println("  delpreset <name>   - Delete a preset");
-        Serial.println("  listpresets        - List all saved presets")
+        Serial.println("  listpresets        - List all saved presets");
 
     } else if (_inputBuffer == "start") {
         cmd.type = SIG_CMD_START;

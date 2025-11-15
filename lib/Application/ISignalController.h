@@ -3,6 +3,7 @@
 #pragma once
 
 #include "signal_iface.h"
+#include "IPulseGenerator.h"  // For PulseChannelConfig_t definition
 
 // Forward declarations
 struct PerformanceMetrics;

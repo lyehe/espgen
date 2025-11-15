@@ -246,7 +246,7 @@ bool SignalEngine::loadPreset(const char* name) {
     }
 
     // Apply the loaded preset by sending a START command
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_START;
     cmd.frequencyHz = settings.frequencyHz;
     cmd.dutyCycle = settings.dutyCycle;

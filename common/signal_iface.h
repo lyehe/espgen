@@ -2,6 +2,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <math.h>      // For isfinite(), fmodf()
 #include "esp_event.h" // Include for ESP Event Loop types
 
 // Declare an event base for SignalEngine events

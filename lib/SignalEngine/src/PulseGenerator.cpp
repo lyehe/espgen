@@ -375,7 +375,7 @@ bool PulseGenerator::triggerSync() {
     // Configure sync signal generation from Timer 0 TEZ (Timer Equal Zero)
     // This makes Timer 0 send a sync pulse when it reaches zero
     mcpwm_sync_config_t sync_conf = {
-        .sync_sig = MCPWM_SELECT_SYNC_INT0,
+        .sync_sig = MCPWM_SELECT_SYNC0,
         .timer_val = 0,
         .count_direction = MCPWM_TIMER_DIRECTION_UP,
     };
@@ -490,7 +490,7 @@ bool PulseGenerator::_setupSync() {
 
     // Timers 1 and 2 are SLAVES - sync to internal sync signal 0
     // Phase offsets will be applied later via _applyPhaseOffset()
-    err = mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_1, MCPWM_SELECT_SYNC_INT0, 0);
+    err = mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_1, MCPWM_SELECT_SYNC0, 0);
     if (err != ESP_OK) {
         Serial.printf("PulseGenerator: ERROR - Failed to enable sync on Timer 1: %s\n",
                      esp_err_to_name(err));
@@ -498,7 +498,7 @@ bool PulseGenerator::_setupSync() {
     }
     Serial.println("PulseGenerator: Timer 1 configured as SLAVE (sync enabled)");
 
-    err = mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_2, MCPWM_SELECT_SYNC_INT0, 0);
+    err = mcpwm_sync_enable(_mcpwm_unit, MCPWM_TIMER_2, MCPWM_SELECT_SYNC0, 0);
     if (err != ESP_OK) {
         Serial.printf("PulseGenerator: ERROR - Failed to enable sync on Timer 2: %s\n",
                      esp_err_to_name(err));
@@ -546,7 +546,7 @@ bool PulseGenerator::_applyPhaseOffset(uint8_t channel_id, float phase_deg) {
 
     // Set phase using mcpwm_sync_enable with phase parameter
     // Note: This sets the sync phase, not a persistent phase offset
-    esp_err_t err = mcpwm_sync_enable(_mcpwm_unit, timer, MCPWM_SELECT_SYNC_INT0, phase_val);
+    esp_err_t err = mcpwm_sync_enable(_mcpwm_unit, timer, MCPWM_SELECT_SYNC0, phase_val);
 
     if (err != ESP_OK) {
         Serial.printf("PulseGenerator: ERROR - Failed to set phase for channel %d: %s\n",

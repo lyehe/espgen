@@ -28,7 +28,7 @@ public:
     }
 
     bool stopSignal() override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_STOP;
         return _engine.sendCommand(cmd);
     }
@@ -63,7 +63,7 @@ public:
     }
 
     bool enableChannel(uint8_t channel, bool enabled) override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_ENABLE_CHANNEL;
         cmd.channel = channel;
         cmd.enabled = enabled;
@@ -71,7 +71,7 @@ public:
     }
 
     bool setChannelPin(uint8_t channel, uint8_t pin) override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_SET_PIN;
         cmd.channel = channel;
         cmd.pin = pin;
@@ -79,7 +79,7 @@ public:
     }
 
     bool setChannelPhase(uint8_t channel, float phase_deg) override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_CONFIG_CHANNEL;
         cmd.channel = channel;
         cmd.phaseOffset = phase_deg;
@@ -93,7 +93,7 @@ public:
         }
         PulseChannelConfig_t config;
         if (_engine.getChannelConfig(channel, config)) {
-            return config.pin;
+            return config.gpio_pin;
         }
         return -1; // Invalid channel
     }
@@ -120,14 +120,14 @@ public:
     }
 
     bool triggerSync() override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_SYNC;
         return _engine.sendCommand(cmd);
     }
 
     // IPinService implementation
     bool setOutputPin(uint8_t pin) override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_SET_PIN;
         cmd.pin = pin;
         return _engine.sendCommand(cmd);
@@ -138,7 +138,7 @@ public:
     }
 
     bool setIndicatorPin(uint8_t pin) override {
-        SignalCmd cmd = {0};
+        SignalCmd cmd = {};
         cmd.type = SIG_CMD_SET_INDICATOR;
         cmd.pin = pin;
         return _engine.sendCommand(cmd);

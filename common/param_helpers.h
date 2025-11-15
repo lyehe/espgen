@@ -18,7 +18,7 @@ extern "C" {
  * @return Configured SignalCmd ready to send
  */
 static inline SignalCmd createStartCmd_FreqDuty(double freq_hz, float duty, float duration_sec) {
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_START;
     cmd.channel = 0;
     cmd.frequencyHz = freq_hz;
@@ -40,7 +40,7 @@ static inline SignalCmd createStartCmd_FreqDuty(double freq_hz, float duty, floa
  * @return Configured SignalCmd ready to send
  */
 static inline SignalCmd createStartCmd_PeriodWidth(uint32_t period_us, uint32_t pulse_width_us, float duration_sec) {
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_START;
     cmd.channel = 0;
     cmd.periodUs = period_us;
@@ -60,7 +60,7 @@ static inline SignalCmd createStartCmd_PeriodWidth(uint32_t period_us, uint32_t 
  * @return Configured SignalCmd ready to send
  */
 static inline SignalCmd createStartCmd_PulseCount(double freq_hz, float duty, uint64_t pulse_count) {
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_START;
     cmd.channel = 0;
     cmd.frequencyHz = freq_hz;
@@ -82,7 +82,7 @@ static inline SignalCmd createStartCmd_PulseCount(double freq_hz, float duty, ui
  */
 static inline SignalCmd createConfigChannel_TimeDelay(uint8_t channel, uint8_t gpio_pin,
                                                       uint32_t phase_delay_us, bool enabled) {
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_CONFIG_CHANNEL;
     cmd.channel = channel;
     cmd.pin = gpio_pin;
@@ -103,7 +103,7 @@ static inline SignalCmd createConfigChannel_TimeDelay(uint8_t channel, uint8_t g
  */
 static inline SignalCmd createConfigChannel_PhaseDegrees(uint8_t channel, uint8_t gpio_pin,
                                                          float phase_deg, bool enabled) {
-    SignalCmd cmd = {0};
+    SignalCmd cmd = {};
     cmd.type = SIG_CMD_CONFIG_CHANNEL;
     cmd.channel = channel;
     cmd.pin = gpio_pin;
