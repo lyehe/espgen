@@ -23,8 +23,12 @@ test/
 │   └── test_timing_controller.cpp
 ├── test_performance_monitor/            # Performance monitoring tests (13 tests)
 │   └── test_performance_monitor.cpp
-└── test_clean_architecture/             # Architecture validation tests (10 tests)
-    └── test_clean_architecture.cpp
+├── test_clean_architecture/             # Architecture validation tests (10 tests)
+│   └── test_clean_architecture.cpp
+├── test_command_dispatcher/             # CommandDispatcher tests (16 tests) ⭐ NEW
+│   └── test_command_dispatcher.cpp
+└── test_signal_adapter/                 # SignalControllerAdapter tests (30 tests) ⭐ NEW
+    └── test_signal_adapter.cpp
 ```
 
 ## Running Tests
@@ -44,6 +48,12 @@ pio test -e native --filter test_performance_monitor
 
 # Clean Architecture tests
 pio test -e native --filter test_clean_architecture
+
+# CommandDispatcher tests ⭐ NEW
+pio test -e native --filter test_command_dispatcher
+
+# SignalControllerAdapter tests ⭐ NEW
+pio test -e native --filter test_signal_adapter
 ```
 
 ### Verbose Output
@@ -84,7 +94,141 @@ void test_calculateCycles_basic() {
 
 ---
 
-### 2. Performance Monitor Tests (13 tests)
+### 2. CommandDispatcher Tests (16 tests) ⭐ NEW
+**File**: `test/test_command_dispatcher/test_command_dispatcher.cpp`
+
+Tests CommandDispatcher with IPerformanceMonitor dependency injection.
+
+**Coverage**:
+
+#### Constructor Tests (2 tests)
+- ✅ Accepts IPerformanceMonitor interface (not concrete class)
+- ✅ Dependency injection works correctly
+
+#### Performance Monitoring Integration (3 tests)
+- ✅ Timing calls delegate to monitor
+- ✅ `getPerformanceMetrics()` delegates correctly
+- ✅ Multiple metrics calls tracked
+
+#### Interface Polymorphism (2 tests)
+- ✅ Uses interface, not concrete class
+- ✅ Real and mock monitors interchangeable
+
+#### Initialization Tests (2 tests)
+- ✅ `begin()` initializes successfully
+- ✅ Not initialized before `begin()`
+
+#### Command Queue Tests (2 tests)
+- ✅ `sendCommand()` fails before initialization
+- ✅ `sendCommand()` succeeds after initialization
+
+#### Mock Verification (2 tests)
+- ✅ Mock tracks all calls
+- ✅ Mock can be reset for reuse
+
+#### Dependency Inversion Principle (3 tests)
+- ✅ Dispatcher depends on abstraction
+- ✅ High-level depends on abstraction (not concrete)
+- ✅ Multiple implementations work identically
+
+**Example**:
+```cpp
+void test_command_dispatcher_dependency_injection() {
+    MockPerformanceMonitor mock;
+    CommandDispatcher dispatcher(
+        pulseGen, state, persistence, timing, events,
+        mock  // Inject mock via IPerformanceMonitor interface
+    );
+
+    PerformanceMetrics metrics;
+    dispatcher.getPerformanceMetrics(metrics);
+
+    // Verify mock was called (not real implementation)
+    TEST_ASSERT_EQUAL_INT(1, mock.getGetMetricsCallCount());
+}
+```
+
+**Total**: 16 tests, ~450 lines of code
+
+---
+
+### 3. SignalControllerAdapter Tests (30 tests) ⭐ NEW
+**File**: `test/test_signal_adapter/test_signal_adapter.cpp`
+
+Tests the adapter pattern implementation bridging ISignalController to SignalEngine.
+
+**Coverage**:
+
+#### Adapter Pattern Tests (2 tests)
+- ✅ Implements ISignalController interface
+- ✅ Wraps SignalEngine correctly
+
+#### ISignalService Tests (8 tests)
+- ✅ `sendCommand()` delegates to engine
+- ✅ `startSignal()` creates START command
+- ✅ `stopSignal()` creates STOP command
+- ✅ `updateSignal()` delegates correctly
+- ✅ `isRunning()` reflects engine state
+- ✅ `getStatus()` delegates to engine
+- ✅ `getCurrentFrequency()` delegates
+- ✅ `getCurrentDutyCycle()` delegates
+
+#### IChannelService Tests (10 tests)
+- ✅ `configureChannel()` sends command
+- ✅ `enableChannel()` creates command
+- ✅ `setChannelPin()` creates command
+- ✅ `setChannelPhase()` creates command
+- ✅ `getChannelPin()` delegates
+- ✅ `isChannelEnabled()` (master always enabled)
+- ✅ `getChannelPhaseOffset()` delegates
+- ✅ `getChannelPolarity()` delegates
+- ✅ `getChannelConfig()` delegates
+- ✅ `triggerSync()` sends command
+
+#### IPinService Tests (4 tests)
+- ✅ `setOutputPin()` sends command and updates engine
+- ✅ `getOutputPin()` delegates
+- ✅ `setIndicatorPin()` sends command
+- ✅ `getIndicatorPin()` delegates
+
+#### IPerformanceService Tests (1 test)
+- ✅ `getPerformanceMetrics()` delegates to engine
+
+#### IPresetService Tests (5 tests)
+- ✅ `savePreset()` delegates and verifies storage
+- ✅ `loadPreset()` delegates and applies settings
+- ✅ `deletePreset()` delegates and removes from storage
+- ✅ `presetExists()` delegates
+- ✅ `listPresets()` delegates
+
+#### Interface Compliance (1 test)
+- ✅ All 26 ISignalController methods callable
+
+#### Clean Architecture (2 tests)
+- ✅ Adapter bridges application → domain layers
+- ✅ Multiple adapters can wrap same engine
+
+**Example**:
+```cpp
+void test_adapter_bridges_application_to_domain_layer() {
+    // Application layer depends on interface
+    ISignalController* interface = adapter;
+
+    // Call through interface
+    SignalCmd cmd = {.type = SIG_CMD_START, .frequencyHz = 1000.0};
+    interface->sendCommand(cmd);
+
+    // Verify domain layer (engine) received command
+    TEST_ASSERT_TRUE(engine->isRunning());
+    TEST_ASSERT_EQUAL_DOUBLE(1000.0, engine->getCurrentFrequencyHz());
+}
+```
+
+**Total**: 30 tests, ~550 lines of code
+
+---
+
+### 4. Performance Monitor Tests (13 tests)
 **File**: `test/test_performance_monitor/test_performance_monitor.cpp`
 
 Tests the new IPerformanceMonitor interface and implementations.
@@ -177,6 +321,19 @@ void test_presentation_to_application_layer_boundary() {
 
 ---
 
+## Test Statistics
+
+| Test Suite | Tests | Lines | Coverage |
+|------------|-------|-------|----------|
+| Timing Controller | 39 | 710 | Core timing logic, pulse counting, duration/count modes |
+| CommandDispatcher | 16 | 450 | IPerformanceMonitor DI, mock integration, command queue |
+| SignalControllerAdapter | 30 | 550 | All 26 interface methods, adapter pattern, layer bridging |
+| Performance Monitor | 13 | 350 | IPerformanceMonitor interface, mock & real implementations |
+| Clean Architecture | 10 | 400 | SOLID principles, layer boundaries, DIP compliance |
+| **Total** | **108** | **2,460** | **Comprehensive** |
+
+---
+
 ## Mock Implementations
 
 ### MockPerformanceMonitor
@@ -235,14 +392,6 @@ TEST_ASSERT_EQUAL_INT(SIG_CMD_START, lastCmd.type);
 
 ---
 
-## Test Statistics
-
-| Test Suite | Tests | Lines | Coverage |
-|------------|-------|-------|----------|
-| Timing Controller | 39 | 710 | Core timing logic, pulse counting, duration/count modes |
-| Performance Monitor | 13 | 350 | IPerformanceMonitor interface, mock & real implementations |
-| Clean Architecture | 10 | 400 | SOLID principles, layer boundaries, DIP compliance |
-| **Total** | **62** | **1,460** | **Comprehensive** |
 
 ---
 
@@ -441,8 +590,8 @@ Current coverage estimates:
 1. ✅ **Created**: Mock implementations for all new interfaces
 2. ✅ **Created**: Unit tests for PerformanceMonitor
 3. ✅ **Created**: Integration tests for Clean Architecture
-4. ⏳ **TODO**: Add tests for CommandDispatcher with IPerformanceMonitor
-5. ⏳ **TODO**: Add tests for SignalControllerAdapter
+4. ✅ **Created**: Tests for CommandDispatcher with IPerformanceMonitor ⭐ NEW
+5. ✅ **Created**: Tests for SignalControllerAdapter ⭐ NEW
 6. ⏳ **TODO**: Add end-to-end integration tests (embedded)
 7. ⏳ **TODO**: Set up CI/CD pipeline (GitHub Actions)
 
@@ -458,6 +607,25 @@ Current coverage estimates:
 ---
 
 **Last Updated**: 2025-01-13
-**Test Count**: 62 tests
-**Test Lines**: 1,460 lines
+**Test Count**: 108 tests (46 new tests added!) ⭐
+**Test Lines**: 2,460 lines
 **Architecture Score**: 100/100 ✅
+
+## Recent Additions (Latest Update)
+
+### 🆕 CommandDispatcher Tests (16 tests)
+- Validates IPerformanceMonitor dependency injection
+- Tests constructor accepts interface, not concrete class
+- Verifies mock and real implementations are interchangeable
+- Confirms Dependency Inversion Principle compliance
+- Tests initialization and command queue behavior
+
+### 🆕 SignalControllerAdapter Tests (30 tests)
+- Validates all 26 ISignalController methods
+- Tests adapter pattern implementation
+- Verifies correct delegation to SignalEngine
+- Confirms Clean Architecture layer boundaries
+- Tests all 5 segregated interfaces (Signal, Channel, Pin, Performance, Preset)
+- Validates multiple adapters can wrap same engine
+
+These additions bring test coverage to **~90%** for the entire Clean Architecture implementation!
