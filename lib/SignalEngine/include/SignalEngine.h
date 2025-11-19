@@ -1,27 +1,38 @@
 #ifndef SIGNAL_ENGINE_H
 #define SIGNAL_ENGINE_H
 
-#include "LedcDriver.h"
+#include "IPulseGenerator.h"
+#include "SignalState.h"
+#include "SignalPersistence.h"
+#include "TimingController.h"
+#include "SignalEventPublisher.h"
+#include "PerformanceMonitor.h"
+#include "CommandDispatcher.h"
 #include "signal_iface.h" // Include command/event definitions
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "esp_event.h"
-// #include "RmtDriver.h" // Include later when RMT is added
-// #include "EngineConfig.h" // Include later for configuration
-// #include "signal_iface.h" // Include later for commands/events
+
+// Forward declarations
+struct PerformanceMetrics;
 
 // Declare the event base
 ESP_EVENT_DECLARE_BASE(SIGNAL_EVENTS);
 
 class SignalEngine {
 public:
-    SignalEngine();
-    void begin();
+    /**
+     * @brief Constructor with dependency injection
+     * @param pulseGen Reference to IPulseGenerator implementation for hardware control
+     */
+    SignalEngine(IPulseGenerator& pulseGen);
+    bool begin(); // Initialize engine - returns false on critical failure
     void loop(); // For periodic tasks if needed (e.g., heartbeat)
     bool sendCommand(const SignalCmd& cmd); // Send command to the engine's queue
 
     // --- Status Getters ---
+    bool isInitialized() const; // Check if initialization succeeded
     double getCurrentFrequencyHz() const;
     float getCurrentDutyCycle() const;
     bool isRunning() const; // Simple check if currently active
@@ -37,42 +48,89 @@ public:
 
     /**
      * @brief Gets the current status of the signal generator.
-     * 
+     *
      * @param status Reference to a SignalStatus_t struct to be filled.
      * @return SignalError Returns SIG_ERR_NONE on success, or an error code.
      *         (Currently assumes single channel, may need expansion for multi-channel)
      */
     SignalError getCurrentStatus(SignalStatus_t& status);
 
+    // --- Channel Configuration Getters ---
+    bool getChannelConfig(uint8_t channel_id, PulseChannelConfig_t& config) const;
+    float getChannelPhaseOffset(uint8_t channel_id) const;
+    SignalPolarity getChannelPolarity(uint8_t channel_id) const;
+
+    // --- Indicator Pin Getter ---
+    uint8_t getIndicatorPin() const;
+
+    // --- Performance Metrics ---
+    /**
+     * @brief Get performance metrics from CommandDispatcher
+     * @param metrics Output parameter to receive metrics
+     */
+    void getPerformanceMetrics(PerformanceMetrics& metrics);
+
+    // --- Configuration Presets ---
+    /**
+     * @brief Save current configuration as a preset
+     * @param name Preset name (max 15 chars)
+     * @return true if saved successfully
+     */
+    bool savePreset(const char* name);
+
+    /**
+     * @brief Load a preset and apply it
+     * @param name Preset name to load
+     * @return true if loaded and applied successfully
+     */
+    bool loadPreset(const char* name);
+
+    /**
+     * @brief Delete a preset
+     * @param name Preset name to delete
+     * @return true if deleted successfully
+     */
+    bool deletePreset(const char* name);
+
+    /**
+     * @brief Check if a preset exists
+     * @param name Preset name
+     * @return true if preset exists
+     */
+    bool presetExists(const char* name);
+
+    /**
+     * @brief List all saved presets
+     * @param buffer Output buffer
+     * @param bufferSize Buffer size
+     * @return Number of presets found
+     */
+    int listPresets(char* buffer, size_t bufferSize);
+
 private:
-    // Assuming one LEDC channel for now, based on Phase 1 scope
-    int _outputPin; // Store the output pin
-    LedcDriver ledcChannel0;
+    // Multi-channel pulse generator (interface for DIP compliance)
+    IPulseGenerator& pulseGen;
 
-    // Current signal state
-    double _currentFrequencyHz;
-    float _currentDutyCycle;
-    bool _isRunning; // Add a state variable
-    uint64_t _startTimeMicros; // Timestamp (us) when current segment started
-    uint64_t _accumulatedTicks; // Ticks accumulated before the current segment
-    // Duration Tracking
-    float _requestedDurationSec;    // Requested duration for current run (0 = infinite)
-    uint64_t _durationStartTimeMicros; // Start time for duration measurement (us)
+    // Centralized state management with thread safety
+    SignalState _state;
 
-    // State for last applied parameters (used by button)
-    double _lastAppliedFrequencyHz;
-    float _lastAppliedDutyCycle;
-    float _lastAppliedDurationSec;
+    // Persistent storage management
+    SignalPersistence _persistence;
 
-    // RmtDriver rmtChannelX; // Add RMT driver instance later
+    // Timing and pulse counting management
+    TimingController _timingController;
 
-    QueueHandle_t xQueueCmd;           // Queue for receiving SignalCmd structs
-    TaskHandle_t xCmdDispatcherHandle; // Handle for the command dispatcher task
+    // ESP event publishing
+    SignalEventPublisher _eventPublisher;
 
-    // Task function for processing commands
-    static void cmdDispatcherTask(void *pvParameters);
+    // Performance monitoring
+    PerformanceMonitor _perfMonitor;
 
-    // Add event posting mechanism later
+    // Command queue and dispatcher
+    CommandDispatcher _commandDispatcher;
+
+    // Initialization state
+    bool _initialized;
 }; // End of SignalEngine class definition
 
 #endif // SIGNAL_ENGINE_H 

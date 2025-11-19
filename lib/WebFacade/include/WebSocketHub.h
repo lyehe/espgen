@@ -11,7 +11,7 @@ class WebFacade;
 class WebSocketHub {
 public:
     WebSocketHub(AsyncWebServer& server);
-    void begin(); // Initialize WebSocket endpoint and event handling
+    bool begin(); // Initialize WebSocket endpoint and event handling - returns false on failure
     void broadcastStatus(int32_t event_id, const SignalEvtData& eventData); // Use event_id for type
 
 private:

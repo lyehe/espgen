@@ -1,5 +1,6 @@
 #include "ApiRouter.h"
 #include "signal_iface.h" // Ensure SigCmdType is visible
+#include "PerformanceMonitor.h" // For PerformanceMetrics struct
 #include <vector> // Needed for temporary buffer
 
 // Define the expected JSON buffer size
@@ -11,8 +12,8 @@ struct RequestBodyState {
 };
 
 // Constructor
-ApiRouter::ApiRouter(SignalEngine& engine, AsyncWebServer& server) :
-    _engine(engine), _server(server) {}
+ApiRouter::ApiRouter(ISignalController& controller, AsyncWebServer& server) :
+    _controller(controller), _server(server) {}
 
 // Method to register API routes
 void ApiRouter::registerRoutes() {
@@ -137,6 +138,231 @@ void ApiRouter::registerRoutes() {
                 // Ideally, accumulate using RequestBodyState like /api/trigger
             }
     });
+
+    // POST /api/setindicator - Set the status indicator pin
+    _server.on("/api/setindicator", HTTP_POST, [this](AsyncWebServerRequest *request){
+        // This is called when headers are received
+        if (!request->_tempObject) {
+            request->_tempObject = new RequestBodyState();
+        }
+    },
+    NULL, // No file upload
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        // Body handler
+        RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+        if (state) {
+            if (index == 0) { // First chunk
+                state->buffer.clear();
+                state->buffer.reserve(total + 1);
+            }
+            state->buffer.insert(state->buffer.end(), data, data + len);
+        }
+
+        if (index + len == total) { // Last chunk
+            Serial.printf("Received POST /api/setindicator, Body Size: %d\n", total);
+            if (state) {
+                state->buffer.push_back(0); // Null-terminate
+
+                JsonDocument jsonDoc;
+                DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                if (error) {
+                    Serial.print("deserializeJson() failed: ");
+                    Serial.println(error.c_str());
+                    request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                } else {
+                    JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                    this->handleSetIndicatorPost(request, jsonVariant);
+                }
+
+                delete state;
+                request->_tempObject = nullptr;
+            }
+        }
+    });
+
+    // POST /api/channel - Configure slave channel
+    _server.on("/api/channel", HTTP_POST, [this](AsyncWebServerRequest *request){
+        if (!request->_tempObject) {
+            request->_tempObject = new RequestBodyState();
+        }
+    },
+    NULL, // No file upload
+    [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+        if (state) {
+            if (index == 0) {
+                state->buffer.clear();
+                state->buffer.reserve(total + 1);
+            }
+            state->buffer.insert(state->buffer.end(), data, data + len);
+        }
+
+        if (index + len == total) {
+            Serial.printf("Received POST /api/channel, Body Size: %d\n", total);
+            if (state) {
+                state->buffer.push_back(0);
+
+                JsonDocument jsonDoc;
+                DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                if (error) {
+                    Serial.print("deserializeJson() failed: ");
+                    Serial.println(error.c_str());
+                    request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                } else {
+                    JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                    this->handleChannelPost(request, jsonVariant);
+                }
+
+                delete state;
+                request->_tempObject = nullptr;
+            }
+        }
+    });
+
+    // GET /api/channels - Get all channel configurations
+    _server.on("/api/channels", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handleChannelsGet(request);
+    });
+
+    // POST /api/sync - Trigger manual sync
+    _server.on("/api/sync", HTTP_POST, [this](AsyncWebServerRequest *request){
+        this->handleSyncPost(request);
+    });
+
+    // GET /api/metrics - Get performance metrics
+    _server.on("/api/metrics", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handleMetricsGet(request);
+    });
+
+    // GET /api/presets - List all presets
+    _server.on("/api/presets", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        this->handlePresetsListGet(request);
+    });
+
+    // POST /api/preset/save - Save current configuration as preset
+    _server.on("/api/preset/save", HTTP_POST,
+        [this](AsyncWebServerRequest *request){
+            if (!request->_tempObject) {
+                request->_tempObject = new RequestBodyState();
+            }
+        },
+        NULL, // No file upload
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+            if (state) {
+                if (index == 0) {
+                    state->buffer.clear();
+                    state->buffer.reserve(total + 1);
+                }
+                state->buffer.insert(state->buffer.end(), data, data + len);
+            }
+
+            if (index + len == total) {
+                Serial.printf("Received POST /api/preset/save, Body Size: %d\n", total);
+                if (state) {
+                    state->buffer.push_back(0); // Null-terminate
+
+                    JsonDocument jsonDoc;
+                    DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                    if (error) {
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                    } else {
+                        JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                        this->handlePresetSavePost(request, jsonVariant);
+                    }
+
+                    delete state;
+                    request->_tempObject = nullptr;
+                }
+            }
+        });
+
+    // POST /api/preset/load - Load a preset
+    _server.on("/api/preset/load", HTTP_POST,
+        [this](AsyncWebServerRequest *request){
+            if (!request->_tempObject) {
+                request->_tempObject = new RequestBodyState();
+            }
+        },
+        NULL, // No file upload
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+            if (state) {
+                if (index == 0) {
+                    state->buffer.clear();
+                    state->buffer.reserve(total + 1);
+                }
+                state->buffer.insert(state->buffer.end(), data, data + len);
+            }
+
+            if (index + len == total) {
+                Serial.printf("Received POST /api/preset/load, Body Size: %d\n", total);
+                if (state) {
+                    state->buffer.push_back(0); // Null-terminate
+
+                    JsonDocument jsonDoc;
+                    DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                    if (error) {
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                    } else {
+                        JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                        this->handlePresetLoadPost(request, jsonVariant);
+                    }
+
+                    delete state;
+                    request->_tempObject = nullptr;
+                }
+            }
+        });
+
+    // DELETE /api/preset/delete - Delete a preset
+    _server.on("/api/preset/delete", HTTP_POST,  // Using POST for compatibility (DELETE with body can be problematic)
+        [this](AsyncWebServerRequest *request){
+            if (!request->_tempObject) {
+                request->_tempObject = new RequestBodyState();
+            }
+        },
+        NULL, // No file upload
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            RequestBodyState* state = static_cast<RequestBodyState*>(request->_tempObject);
+            if (state) {
+                if (index == 0) {
+                    state->buffer.clear();
+                    state->buffer.reserve(total + 1);
+                }
+                state->buffer.insert(state->buffer.end(), data, data + len);
+            }
+
+            if (index + len == total) {
+                Serial.printf("Received POST /api/preset/delete, Body Size: %d\n", total);
+                if (state) {
+                    state->buffer.push_back(0); // Null-terminate
+
+                    JsonDocument jsonDoc;
+                    DeserializationError error = deserializeJson(jsonDoc, state->buffer.data());
+
+                    if (error) {
+                        Serial.print("deserializeJson() failed: ");
+                        Serial.println(error.c_str());
+                        request->send(400, "application/json", "{\"error\":\"Invalid JSON format\"}");
+                    } else {
+                        JsonVariant jsonVariant = jsonDoc.as<JsonVariant>();
+                        this->handlePresetDeletePost(request, jsonVariant);
+                    }
+
+                    delete state;
+                    request->_tempObject = nullptr;
+                }
+            }
+        });
 }
 
 // Handler implementation for GET /api/discovery
@@ -155,17 +381,17 @@ void ApiRouter::handleDiscoveryGet(AsyncWebServerRequest *request) {
 // Handler implementation for GET /api/status
 void ApiRouter::handleStatusGet(AsyncWebServerRequest *request) {
     SignalStatus_t currentStatus;
-    SignalError err = _engine.getCurrentStatus(currentStatus);
+    SignalError err = _controller.getStatus(currentStatus);
 
     if (err != SIG_OK) {
-        // Handle potential errors from getCurrentStatus if any are added later
+        // Handle potential errors from getStatus if any are added later
         Serial.printf("Error getting signal status: %d\n", err);
         request->send(500, "application/json", "{\"error\":\"Failed to get engine status\"}");
         return;
     }
 
     // Get the current output pin
-    int outputPin = _engine.getOutputPin();
+    int outputPin = _controller.getOutputPin();
 
     // Build JSON response using the status struct
     JsonDocument doc; // Using modern JsonDocument
@@ -193,40 +419,103 @@ void ApiRouter::handleTriggerPost(AsyncWebServerRequest *request, JsonVariant &j
     }
 
     const char* commandStr = obj["command"];
-    // uint8_t channel = obj["channel"] | 0; // Channel currently not in SignalCmd
-    uint32_t freq = obj["frequency"] | 1000;
-    float duty = obj["duty_cycle"] | 0.5f;
-    float duration = obj["duration_sec"] | 0.0f; // Parse duration_sec, default 0
-
-    SignalCmd cmd;
+    SignalCmd cmd = {}; // Zero-initialize entire structure
     bool commandValid = true;
-    cmd.durationSec = 0; // Ensure duration is 0 for non-start commands by default
+
+    // Parse channel (default to 0)
+    cmd.channel = obj["channel"] | 0;
+
+    // Parse polarity (default to active high)
+    if (obj.containsKey("polarity")) {
+        const char* polarityStr = obj["polarity"];
+        if (strcmp(polarityStr, "active_low") == 0) {
+            cmd.polarity = POLARITY_ACTIVE_LOW;
+        } else {
+            cmd.polarity = POLARITY_ACTIVE_HIGH;
+        }
+    } else {
+        cmd.polarity = POLARITY_ACTIVE_HIGH;
+    }
+
+    // Initialize paramMode
+    cmd.paramMode = 0;
 
     // Use correct enum type and values
     if (strcmp(commandStr, "start") == 0) {
         cmd.type = SIG_CMD_START;
-        cmd.frequencyHz = freq;
-        cmd.dutyCycle = duty;
-        cmd.durationSec = duration; // Set duration for start command
-        Serial.printf("API: Parsed START (Freq: %lu, Duty: %.2f, Duration: %.2f s)\n", freq, duty, duration);
+
+        // Frequency OR Period
+        if (obj.containsKey("period_us")) {
+            cmd.periodUs = obj["period_us"];
+            cmd.paramMode |= PARAM_USE_PERIOD;
+            Serial.printf("API: Using period: %lu us\n", cmd.periodUs);
+        } else {
+            cmd.frequencyHz = obj["frequency"] | 1000;
+            cmd.paramMode |= PARAM_USE_FREQUENCY;
+            Serial.printf("API: Using frequency: %.2f Hz\n", cmd.frequencyHz);
+        }
+
+        // Duty Cycle OR Pulse Width
+        if (obj.containsKey("pulse_width_us")) {
+            cmd.pulseWidthUs = obj["pulse_width_us"];
+            cmd.paramMode |= PARAM_USE_PULSE_WIDTH;
+            Serial.printf("API: Using pulse width: %lu us\n", cmd.pulseWidthUs);
+        } else {
+            cmd.dutyCycle = obj["duty_cycle"] | 0.5f;
+            cmd.paramMode |= PARAM_USE_DUTY_CYCLE;
+            Serial.printf("API: Using duty cycle: %.2f\n", cmd.dutyCycle);
+        }
+
+        // Duration OR Pulse Count
+        if (obj.containsKey("pulse_count")) {
+            cmd.pulseCount = obj["pulse_count"];
+            cmd.paramMode |= PARAM_USE_PULSE_COUNT;
+            Serial.printf("API: Using pulse count: %llu\n", cmd.pulseCount);
+        } else {
+            cmd.durationSec = obj["duration_sec"] | 0.0f;
+            cmd.paramMode |= PARAM_USE_DURATION;
+            Serial.printf("API: Using duration: %.2f s\n", cmd.durationSec);
+        }
+
+        Serial.printf("API: Parsed START (Channel: %d, Polarity: %s)\n",
+                     cmd.channel,
+                     cmd.polarity == POLARITY_ACTIVE_HIGH ? "HIGH" : "LOW");
     } else if (strcmp(commandStr, "stop") == 0) {
         cmd.type = SIG_CMD_STOP;
-         Serial.printf("API: Parsed STOP\n");
+        cmd.paramMode = 0; // STOP doesn't need parameters
+        Serial.printf("API: Parsed STOP\n");
     } else if (strcmp(commandStr, "update") == 0) {
         // Assuming "update" corresponds to UPDATE_ALL
         cmd.type = SIG_CMD_UPDATE_ALL;
-        cmd.frequencyHz = freq;
-        cmd.dutyCycle = duty;
-         Serial.printf("API: Parsed UPDATE (Freq: %lu, Duty: %.2f)\n", freq, duty);
+
+        // Frequency OR Period
+        if (obj.containsKey("period_us")) {
+            cmd.periodUs = obj["period_us"];
+            cmd.paramMode |= PARAM_USE_PERIOD;
+        } else {
+            cmd.frequencyHz = obj["frequency"] | 1000;
+            cmd.paramMode |= PARAM_USE_FREQUENCY;
+        }
+
+        // Duty Cycle OR Pulse Width
+        if (obj.containsKey("pulse_width_us")) {
+            cmd.pulseWidthUs = obj["pulse_width_us"];
+            cmd.paramMode |= PARAM_USE_PULSE_WIDTH;
+        } else {
+            cmd.dutyCycle = obj["duty_cycle"] | 0.5f;
+            cmd.paramMode |= PARAM_USE_DUTY_CYCLE;
+        }
+
+        Serial.printf("API: Parsed UPDATE\n");
     } else {
         commandValid = false;
-         Serial.printf("API: Invalid command '%s'\n", commandStr);
+        Serial.printf("API: Invalid command '%s'\n", commandStr);
         request->send(400, "application/json", "{\"error\":\"Invalid command value\"}");
     }
 
     if (commandValid) {
         // Use correct method name
-        if (_engine.sendCommand(cmd)) {
+        if (_controller.sendCommand(cmd)) {
             request->send(200, "application/json", "{\"status\":\"queued\"}");
             Serial.println("API: Command sent successfully.");
         } else {
@@ -248,13 +537,13 @@ void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVaria
     int pin = obj["pin"];
     Serial.printf("API: Received request to set output pin to %d\n", pin);
 
-    // Validate the pin number
-    if (pin >= 12 && pin <= 19) {
+    // Validate the pin number (GPIO 0-33 are valid on ESP32)
+    if (pin >= 0 && pin <= 33) {
         SignalCmd cmd;
         cmd.type = SIG_CMD_SET_PIN;
         cmd.pin = (uint8_t)pin;
 
-        if (_engine.sendCommand(cmd)) {
+        if (_controller.sendCommand(cmd)) {
             request->send(200, "application/json", "{\"status\":\"output pin update queued\"}");
             Serial.println("API: Set Output Pin command sent successfully.");
         } else {
@@ -262,7 +551,272 @@ void ApiRouter::handleSetOutputPinPost(AsyncWebServerRequest *request, JsonVaria
             Serial.println("API: Command queue full for Set Output Pin.");
         }
     } else {
-        Serial.printf("API: Invalid pin %d requested. Must be 12-19.\n", pin);
-        request->send(400, "application/json", "{\"error\":\"Invalid pin number (must be 12-19)\"}");
+        Serial.printf("API: Invalid pin %d requested. Must be 0-33.\n", pin);
+        request->send(400, "application/json", "{\"error\":\"Invalid pin number (must be 0-33)\"}");
     }
-} 
+}
+
+void ApiRouter::handleSetIndicatorPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["pin"].is<int>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'pin' field (must be integer)\"}");
+        return;
+    }
+
+    int pin = obj["pin"];
+    Serial.printf("API: Received request to set indicator pin to %d\n", pin);
+
+    // Indicator pin can be 0 (disabled) or any valid GPIO
+    // Note: We don't restrict to 12-19 since indicator is just a simple GPIO output
+    SignalCmd cmd = {};
+    cmd.type = SIG_CMD_SET_INDICATOR;
+    cmd.pin = (uint8_t)pin;
+    cmd.paramMode = 0; // No special parameters needed
+
+    if (_controller.sendCommand(cmd)) {
+        if (pin == 0) {
+            request->send(200, "application/json", "{\"status\":\"indicator disabled\"}");
+            Serial.println("API: Indicator disabled.");
+        } else {
+            request->send(200, "application/json", "{\"status\":\"indicator pin update queued\"}");
+            Serial.printf("API: Set indicator pin to %d command sent successfully.\n", pin);
+        }
+    } else {
+        request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+        Serial.println("API: Command queue full for set indicator.");
+    }
+}
+
+// Handler implementation for POST /api/channel
+void ApiRouter::handleChannelPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    // Validate required fields
+    if (!obj || !obj["channel"].is<int>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'channel' field (must be integer)\"}");
+        return;
+    }
+
+    int channel = obj["channel"];
+
+    // Channel must be 1-5 (slave channels only)
+    if (channel < 1 || channel > 5) {
+        request->send(400, "application/json", "{\"error\":\"Channel must be 1-5 (slave channels only)\"}");
+        return;
+    }
+
+    SignalCmd cmd = {};
+    cmd.type = SIG_CMD_CONFIG_CHANNEL;
+    cmd.channel = (uint8_t)channel;
+
+    // Parse pin (optional)
+    if (obj.containsKey("pin")) {
+        cmd.pin = obj["pin"];
+    }
+
+    // Parse phase offset (optional) - can be degrees OR time delay
+    if (obj.containsKey("phase_delay_us")) {
+        cmd.phaseDelayUs = obj["phase_delay_us"];
+        cmd.paramMode |= PARAM_USE_PHASE_TIME;
+        Serial.printf("API: Channel %d phase delay: %lu us\n", channel, cmd.phaseDelayUs);
+    } else if (obj.containsKey("phase_offset")) {
+        cmd.phaseOffset = obj["phase_offset"];
+        cmd.paramMode |= PARAM_USE_PHASE_DEGREES;
+        Serial.printf("API: Channel %d phase offset: %.2f degrees\n", channel, cmd.phaseOffset);
+    }
+
+    // Parse enabled (optional)
+    if (obj.containsKey("enabled")) {
+        cmd.enabled = obj["enabled"];
+    } else {
+        cmd.enabled = true; // Default to enabled
+    }
+
+    Serial.printf("API: Configuring channel %d (pin: %d, enabled: %s)\n",
+                 channel, cmd.pin, cmd.enabled ? "true" : "false");
+
+    if (_controller.sendCommand(cmd)) {
+        request->send(200, "application/json", "{\"status\":\"channel config queued\"}");
+        Serial.println("API: Channel config command sent successfully.");
+    } else {
+        request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+        Serial.println("API: Command queue full for channel config.");
+    }
+}
+
+// Handler implementation for GET /api/channels
+void ApiRouter::handleChannelsGet(AsyncWebServerRequest *request) {
+    // Returns complete channel configuration from SignalEngine/PulseGenerator
+    JsonDocument doc;
+    JsonArray channels = doc["channels"].to<JsonArray>();
+
+    // Channel 0 (master)
+    JsonObject ch0 = channels.add<JsonObject>();
+    ch0["id"] = 0;
+    ch0["type"] = "master";
+    ch0["pin"] = _controller.getOutputPin();
+    ch0["enabled"] = true; // Master is always enabled
+    ch0["phase_offset"] = 0; // Master has no phase offset
+
+    // Get polarity for master channel
+    SignalPolarity masterPolarity = _controller.getChannelPolarity(0);
+    ch0["polarity"] = (masterPolarity == POLARITY_ACTIVE_HIGH) ? "high" : "low";
+
+    // Channels 1-5 (slaves)
+    for (int i = 1; i <= 5; i++) {
+        JsonObject ch = channels.add<JsonObject>();
+        ch["id"] = i;
+        ch["type"] = "slave";
+        ch["pin"] = _controller.getChannelPin(i);
+        ch["enabled"] = _controller.isChannelEnabled(i);
+        ch["phase_offset"] = _controller.getChannelPhaseOffset(i);
+
+        // Get polarity (convert enum to string)
+        SignalPolarity polarity = _controller.getChannelPolarity(i);
+        ch["polarity"] = (polarity == POLARITY_ACTIVE_HIGH) ? "high" : "low";
+    }
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Sent GET /api/channels response");
+}
+
+// Handler implementation for POST /api/sync
+void ApiRouter::handleSyncPost(AsyncWebServerRequest *request) {
+    SignalCmd cmd = {};
+    cmd.type = SIG_CMD_SYNC;
+    cmd.paramMode = 0; // SYNC doesn't need parameters
+
+    Serial.printf("API: Received sync trigger request\n");
+
+    if (_controller.sendCommand(cmd)) {
+        request->send(200, "application/json", "{\"status\":\"sync triggered\"}");
+        Serial.println("API: Sync command sent successfully.");
+    } else {
+        request->send(503, "application/json", "{\"error\":\"Command queue full\"}");
+        Serial.println("API: Command queue full for sync.");
+    }
+}
+
+// Handler implementation for GET /api/metrics
+void ApiRouter::handleMetricsGet(AsyncWebServerRequest *request) {
+    PerformanceMetrics metrics;
+    _controller.getPerformanceMetrics(metrics);
+
+    JsonDocument doc;
+    doc["total_commands"] = metrics.totalCommands;
+    doc["avg_latency_us"] = metrics.avgCommandLatencyUs;
+    doc["max_latency_us"] = metrics.maxCommandLatencyUs;
+    doc["min_latency_us"] = (metrics.minCommandLatencyUs == UINT64_MAX) ? 0 : metrics.minCommandLatencyUs;
+    doc["free_heap"] = metrics.freeHeap;
+    doc["min_free_heap"] = (metrics.minFreeHeap == UINT32_MAX) ? 0 : metrics.minFreeHeap;
+    doc["uptime_ms"] = metrics.uptimeMs;
+    doc["total_events"] = metrics.totalEvents;
+    doc["failed_events"] = metrics.failedEvents;
+    doc["event_success_rate"] = (metrics.totalEvents > 0) ?
+        ((metrics.totalEvents - metrics.failedEvents) * 100.0 / metrics.totalEvents) : 100.0;
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.println("Sent GET /api/metrics response");
+}
+
+// Handler implementation for GET /api/presets
+void ApiRouter::handlePresetsListGet(AsyncWebServerRequest *request) {
+    char buffer[512];  // Buffer to hold preset list
+    int count = _controller.listPresets(buffer, sizeof(buffer));
+
+    JsonDocument doc;
+    doc["count"] = count;
+
+    if (count > 0) {
+        JsonArray presets = doc["presets"].to<JsonArray>();
+
+        // Parse the buffer (format: "name1,name2,name3")
+        char* token = strtok(buffer, ",");
+        while (token != NULL) {
+            presets.add(token);
+            token = strtok(NULL, ",");
+        }
+    } else {
+        doc["presets"] = JsonArray();  // Empty array
+    }
+
+    String output;
+    serializeJson(doc, output);
+    request->send(200, "application/json", output);
+    Serial.printf("Sent GET /api/presets response (found %d presets)\n", count);
+}
+
+// Handler implementation for POST /api/preset/save
+void ApiRouter::handlePresetSavePost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["name"].is<const char*>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'name' field\"}");
+        return;
+    }
+
+    const char* name = obj["name"];
+
+    // Validate name length (max 15 chars as per SignalPersistence)
+    if (strlen(name) > 15) {
+        request->send(400, "application/json", "{\"error\":\"Preset name too long (max 15 chars)\"}");
+        return;
+    }
+
+    Serial.printf("API: Saving preset '%s'\n", name);
+
+    if (_controller.savePreset(name)) {
+        request->send(200, "application/json", "{\"status\":\"preset saved\"}");
+        Serial.printf("API: Preset '%s' saved successfully\n", name);
+    } else {
+        request->send(500, "application/json", "{\"error\":\"Failed to save preset\"}");
+        Serial.printf("API: Failed to save preset '%s'\n", name);
+    }
+}
+
+// Handler implementation for POST /api/preset/load
+void ApiRouter::handlePresetLoadPost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["name"].is<const char*>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'name' field\"}");
+        return;
+    }
+
+    const char* name = obj["name"];
+    Serial.printf("API: Loading preset '%s'\n", name);
+
+    if (_controller.loadPreset(name)) {
+        request->send(200, "application/json", "{\"status\":\"preset loaded and applied\"}");
+        Serial.printf("API: Preset '%s' loaded successfully\n", name);
+    } else {
+        request->send(404, "application/json", "{\"error\":\"Preset not found or failed to load\"}");
+        Serial.printf("API: Failed to load preset '%s'\n", name);
+    }
+}
+
+// Handler implementation for POST /api/preset/delete
+void ApiRouter::handlePresetDeletePost(AsyncWebServerRequest *request, JsonVariant &json) {
+    JsonObject obj = json.as<JsonObject>();
+
+    if (!obj || !obj["name"].is<const char*>()) {
+        request->send(400, "application/json", "{\"error\":\"Missing or invalid 'name' field\"}");
+        return;
+    }
+
+    const char* name = obj["name"];
+    Serial.printf("API: Deleting preset '%s'\n", name);
+
+    if (_controller.deletePreset(name)) {
+        request->send(200, "application/json", "{\"status\":\"preset deleted\"}");
+        Serial.printf("API: Preset '%s' deleted successfully\n", name);
+    } else {
+        request->send(404, "application/json", "{\"error\":\"Preset not found or failed to delete\"}");
+        Serial.printf("API: Failed to delete preset '%s'\n", name);
+    }
+}

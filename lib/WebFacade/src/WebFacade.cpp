@@ -1,20 +1,24 @@
 #include "WebFacade.h"
 #include <Arduino.h> // For Serial prints
+#include <WiFi.h>    // For WiFi functionality
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h> // For mDNS
 #include "OTAService.h" // Include OTAService for integration
 
-// Constructor implementation - updated
-WebFacade::WebFacade(SignalEngine& engine) :
-    _engine(engine),          // Initialize the engine reference
-    _server(80),              // Initialize the server
-    _wifiMgr(),               // Initialize WifiMgr
-    _apiRouter(_engine, _server), // Initialize ApiRouter, passing engine and server
-    _wsHub(_server), // Initialize WebSocketHub, passing the server
-    _otaService() // Initialize OTAService
+// Constructor implementation - Clean Architecture wiring
+// WebFacade is pure presentation layer - depends only on interfaces
+WebFacade::WebFacade(ISignalController& controller) :
+    _controller(controller),           // Application layer interface (Clean Architecture)
+    _server(80),                       // Initialize the server
+    _wifiMgr(),                        // Initialize WifiMgr
+    _apiRouter(_controller, _server),  // Inject interface into ApiRouter (Dependency Inversion!)
+    _wsHub(_server),                   // Initialize WebSocketHub, passing the server
+    _otaService()                      // Initialize OTAService
 {
-    // Constructor body (if needed)
+    // WebFacade is now a pure presentation layer component
+    // It knows nothing about domain layer (SignalEngine)
+    // Composition happens in main.cpp where adapter is created
 }
 
 // Initialize LittleFS
@@ -23,8 +27,23 @@ bool WebFacade::initLittleFS()
     if (!LittleFS.begin())
     {
         Serial.println("ERROR: Failed to mount LittleFS");
-        // TODO: Handle filesystem formatting or error indication
-        return false;
+        Serial.println("Attempting to format LittleFS...");
+
+        // Attempt to format the filesystem
+        if (!LittleFS.format()) {
+            Serial.println("ERROR: LittleFS format failed!");
+            return false;
+        }
+
+        Serial.println("LittleFS formatted successfully");
+
+        // Try mounting again after format
+        if (!LittleFS.begin()) {
+            Serial.println("ERROR: Failed to mount LittleFS after format");
+            return false;
+        }
+
+        Serial.println("LittleFS mounted successfully after format");
     }
     Serial.println("LittleFS mounted successfully. Contents:");
     File root = LittleFS.open("/");
@@ -53,15 +72,15 @@ void WebFacade::handleNotFound(AsyncWebServerRequest *request)
     request->send(404, "text/plain", "Not found");
     }
 
-// Begin WebFacade operation - updated
-void WebFacade::begin()
+// Begin WebFacade operation - returns false on critical failure
+bool WebFacade::begin()
 {
     Serial.println("Initializing WebFacade...");
 
     if (!initLittleFS())
     {
-        Serial.println("Halting WebFacade due to LittleFS failure.");
-        return; // Don't proceed if FS fails
+        Serial.println("CRITICAL: WebFacade initialization FAILED - LittleFS mount failed");
+        return false; // Don't proceed if FS fails
     }
 
     // Start WiFi Manager (handles connection/AP mode)
@@ -87,7 +106,11 @@ void WebFacade::begin()
     Serial.println("API routes registered.");
 
     // Initialize WebSocket Hub (adds /ws handler)
-    _wsHub.begin(); // This call now exists
+    if (!_wsHub.begin()) {
+        Serial.println("WebFacade: ERROR - WebSocket hub initialization failed!");
+        Serial.println("WebFacade: WebSocket updates will not work, but continuing...");
+        // Continue anyway - web interface will work, just no real-time updates
+    }
 
     // --- Register standard handlers ---
 
@@ -129,7 +152,7 @@ void WebFacade::begin()
     _otaService.begin(&_server);
 
     // Initialize mDNS (optional but recommended)
-    if (WiFi.getMode() == WIFI_STA)
+    if (WiFi.getMode() == WIFI_MODE_STA)
     { // Only run mDNS in STA mode
         if (MDNS.begin("trigger"))
         { // Hostname 'trigger.local'
@@ -141,4 +164,7 @@ void WebFacade::begin()
             Serial.println("Error starting MDNS");
         }
     }
+
+    Serial.println("WebFacade initialization complete");
+    return true; // Successful initialization
 }

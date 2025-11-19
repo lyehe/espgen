@@ -2,12 +2,16 @@
 // Test application focusing on WebFacade (Phase 6: REST API)
 
 #include <Arduino.h>
-#include "WebFacade.h" // Include the WebFacade library
-#include "SignalEngine.h" // Include the SignalEngine library
+#include "PulseGenerator.h" // Concrete implementation
+#include "SignalEngine.h"   // Include the SignalEngine library
+#include "WebFacade.h"      // Include the WebFacade library
+#include "SignalControllerAdapter.h" // Application layer adapter (Clean Architecture)
 
 // Global instances
-SignalEngine signalEngine; // Create the signal engine object
-WebFacade webFacade(signalEngine); // Create WebFacade, passing the engine
+PulseGenerator pulseGen;               // Hardware implementation
+SignalEngine signalEngine(pulseGen);   // Inject dependency
+SignalControllerAdapter adapter(signalEngine); // Adapter bridges domain to application layer
+WebFacade webFacade(adapter);          // WebFacade depends on interface (Clean Architecture)
 
 void setup() {
     Serial.begin(115200);
